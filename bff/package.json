@@ -1,0 +1,22 @@
+{
+  "name": "geo-optimizer-admin-bff",
+  "version": "0.1.0",
+  "private": true,
+  "description": "geo-optimizer 도메인 룰 관리 BFF (인증 + Spin KV 프록시)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed:user": "node scripts/seed-user.js",
+    "check:contract": "node scripts/check-contract.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0"
+  }
+}

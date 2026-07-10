@@ -1,0 +1,13 @@
+# dependencies
+node_modules/
+
+# secrets / local env
+.env
+bff/.env
+
+# 사용자 계정 파일 (bcrypt 해시라도 커밋 금지)
+bff/data/
+
+# logs / OS
+*.log
+.DS_Store

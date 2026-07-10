@@ -1,0 +1,94 @@
+'use strict';
+const express = require('express');
+const C = require('../../../shared/api-contract');
+
+function createRulesRouter({ spin, config }) {
+  const router = express.Router();
+
+  const manifestKeyFromQuery = (q) => {
+    const pageType = q.page_type || null;
+    if (q.scope === 'global') return C.KV.manifest(C.KV.manifestScope({ pageType }), config.env, config.channel);
+    if (q.domain) return C.KV.manifest(C.KV.manifestScope({ customer: q.domain, pageType }), config.env, config.channel);
+    return null;
+  };
+
+  // GET /api/rules?scope=global | ?domain=:id[&page_type=pt]
+  // 매니페스트를 읽고 rule 포인터를 fan-out 조회해 룰 배열로 집계한다.
+  router.get('/', async (req, res, next) => {
+    try {
+      const key = manifestKeyFromQuery(req.query);
+      if (!key) return res.status(400).json({ ok: false, error: 'scope=global 또는 domain=:id 파라미터가 필요합니다.' });
+      const { found, value: manifest } = await spin.kvGet(key);
+      if (!found) return res.json({ ok: true, manifest: null, rules: [] });
+
+      const pointers = Array.isArray(manifest.rules) ? manifest.rules : [];
+      const results = await Promise.all(pointers.map(async (p) => {
+        try {
+          const { found: rFound, value } = await spin.kvGet(C.KV.rule(p.rule_id, p.version));
+          return { rule_id: p.rule_id, version: p.version, found: rFound, rule: rFound ? value : null };
+        } catch (err) {
+          return { rule_id: p.rule_id, version: p.version, found: false, rule: null, error: err.message };
+        }
+      }));
+      res.json({ ok: true, manifest, rules: results });
+    } catch (err) { next(err); }
+  });
+
+  // GET /api/rules/:rule_id?version=n
+  router.get('/:rule_id', async (req, res, next) => {
+    try {
+      const version = parseInt(req.query.version, 10) || 1;
+      const { found, value } = await spin.kvGet(C.KV.rule(req.params.rule_id, version));
+      res.json({ ok: true, found, rule: found ? value : null });
+    } catch (err) { next(err); }
+  });
+
+  // POST /api/rules/:rule_id?version=n[&attach=1&domain=:id&page_type=pt]
+  // body = 룰 JSON. 필수값/priority/actions 서버측 재검증 후 저장.
+  // attach=1 이면 해당 스코프 매니페스트에 {rule_id, version} 포인터를 upsert한다
+  // (스펙 확장: 새 룰이 목록 fan-out에 바로 잡히도록).
+  router.post('/:rule_id', async (req, res, next) => {
+    try {
+      const rule = req.body || {};
+      const version = parseInt(req.query.version, 10) || rule.version || 1;
+      const errors = C.validateRule(rule);
+      if (rule.rule_id !== req.params.rule_id)
+        errors.push(`body.rule_id("${rule.rule_id}")가 경로의 rule_id("${req.params.rule_id}")와 다릅니다.`);
+      if (errors.length) return res.status(400).json({ ok: false, errors });
+
+      rule.version = version;
+      const result = await spin.kvSet(C.KV.rule(rule.rule_id, version), rule);
+
+      let attached = null;
+      if (req.query.attach === '1') {
+        const scopeObj = {
+          customer: req.query.domain && req.query.domain !== C.GLOBAL_ID ? req.query.domain : null,
+          pageType: req.query.page_type || null,
+        };
+        const mKey = C.KV.manifest(C.KV.manifestScope(scopeObj), config.env, config.channel);
+        const { found, value } = await spin.kvGet(mKey);
+        const manifest = found ? value : {
+          schema_version: '1.0',
+          manifest_id: C.KV.manifestScope(scopeObj).replace(/\//g, ':'),
+          env: config.env, channel: config.channel,
+          scope: { tenant: 'default', customer: scopeObj.customer, page_type: scopeObj.pageType },
+          version: 0, rules: [],
+        };
+        const rules = Array.isArray(manifest.rules) ? manifest.rules : [];
+        const idx = rules.findIndex((p) => p.rule_id === rule.rule_id);
+        if (idx >= 0) rules[idx] = { rule_id: rule.rule_id, version };
+        else rules.push({ rule_id: rule.rule_id, version });
+        manifest.rules = rules;
+        manifest.version = (manifest.version || 0) + 1;
+        await spin.kvSet(mKey, manifest);
+        attached = { manifest_key: mKey, manifest_version: manifest.version };
+      }
+
+      res.json({ ok: true, key: result.key, bytes: result.bytes, version, attached });
+    } catch (err) { next(err); }
+  });
+
+  return router;
+}
+
+module.exports = { createRulesRouter };

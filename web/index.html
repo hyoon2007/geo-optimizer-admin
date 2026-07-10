@@ -1,0 +1,1522 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GEO Optimizer Admin — 도메인 룰 관리</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --border: #dcdfe4; --text: #1f2328;
+    --muted: #656d76; --accent: #0b5fff; --accent-dark: #0846bd;
+    --danger: #c62828; --ok: #1b7f37; --warn: #9a6700;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  }
+  h1 { font-size: 18px; margin: 0; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  h3 { font-size: 15px; margin: 0; }
+  button {
+    font: inherit; padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--panel); color: var(--text); cursor: pointer;
+  }
+  button:hover { background: #f0f2f5; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: var(--accent-dark); }
+  button.danger { color: var(--danger); border-color: var(--danger); }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px;
+  }
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    font: inherit; width: 100%; padding: 6px 8px; border: 1px solid var(--border);
+    border-radius: 6px; background: #fff; color: var(--text);
+  }
+  input:disabled, textarea:disabled { background: #eef0f3; color: var(--muted); }
+  textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  label { font-weight: 600; display: block; margin-bottom: 3px; }
+  small.help { display: block; color: var(--muted); margin-top: 3px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  .field { margin-bottom: 4px; }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 16px; }
+  .form-grid .wide { grid-column: 1 / -1; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .spread { justify-content: space-between; }
+  .errors { color: var(--danger); margin: 10px 0 0; padding-left: 18px; }
+  .errors:empty { display: none; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; border: 1px solid var(--border); }
+  .badge.on { color: var(--ok); border-color: var(--ok); }
+  .badge.off { color: var(--muted); }
+  .badge.status-published { color: var(--ok); border-color: var(--ok); }
+  .badge.status-draft { color: var(--warn); border-color: var(--warn); }
+  .badge.status-deprecated, .badge.status-archived { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  code { background: #eef0f3; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  pre { background: #f0f2f5; border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow: auto; font-size: 12.5px; }
+
+  /* 레이아웃 */
+  #app-header {
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    padding: 10px 24px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 10;
+  }
+  #app-header .grow { flex: 1; }
+  #app-header label { display: inline; margin: 0 6px 0 0; font-weight: 600; }
+  #app-header select { width: auto; min-width: 200px; }
+  main.container { max-width: 1100px; margin: 0 auto; padding: 18px 24px 60px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid var(--border); }
+  .tabs [role=tab] {
+    border: none; background: none; border-radius: 6px 6px 0 0; padding: 9px 16px;
+    color: var(--muted); font-weight: 600; margin-bottom: -2px; border-bottom: 2px solid transparent;
+  }
+  .tabs [role=tab][aria-selected=true] { color: var(--accent); border-bottom-color: var(--accent); }
+  .cat-header { margin: 22px 0 8px; }
+  .cat-header p { margin: 2px 0 8px; color: var(--muted); font-size: 13px; }
+
+  /* 로그인 */
+  #login-view { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  #login-form { width: 340px; }
+  #login-form .field { margin-bottom: 12px; }
+
+  /* 토스트 / 모달 */
+  #toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: #2b3138; color: #fff; padding: 10px 20px; border-radius: 8px;
+    opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 100; max-width: 80vw;
+  }
+  #toast.show { opacity: 1; }
+  #toast.error { background: var(--danger); }
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 50;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .modal { background: var(--panel); border-radius: 10px; padding: 20px; max-width: 720px; width: 100%; max-height: 85vh; display: flex; flex-direction: column; gap: 12px; }
+  .modal pre { flex: 1; overflow: auto; margin: 0; max-height: 55vh; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<!-- ===================== 로그인 ===================== -->
+<div id="login-view" hidden>
+  <form id="login-form" class="panel" aria-labelledby="login-title">
+    <h1 id="login-title" style="margin-bottom:14px">GEO Optimizer Admin</h1>
+    <div class="field">
+      <label for="login-username">사용자명</label>
+      <input type="text" id="login-username" name="username" autocomplete="username" required>
+    </div>
+    <div class="field">
+      <label for="login-password">비밀번호</label>
+      <input type="password" id="login-password" name="password" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="primary" id="login-btn" style="width:100%;margin-top:6px">로그인</button>
+    <p id="login-error" class="errors" role="alert" style="list-style:none;padding:0"></p>
+    <small class="help" id="mock-hint" hidden>Mock 모드: 아무 사용자명/비밀번호로 로그인됩니다. (데이터는 브라우저 메모리에만 유지)</small>
+  </form>
+</div>
+
+<!-- ===================== 앱 ===================== -->
+<div id="app-view" hidden>
+  <header id="app-header">
+    <h1>GEO Optimizer Admin</h1>
+    <div>
+      <label for="domain-select">도메인</label>
+      <select id="domain-select" aria-label="관리할 도메인 선택"></select>
+    </div>
+    <span class="grow"></span>
+    <span id="whoami" style="color:var(--muted)"></span>
+    <button id="logout-btn">로그아웃</button>
+  </header>
+
+  <main class="container">
+    <div class="tabs" role="tablist" aria-label="관리 섹션">
+      <button role="tab" id="tabbtn-domain" aria-controls="tab-domain" aria-selected="true">도메인 정보</button>
+      <button role="tab" id="tabbtn-pagetypes" aria-controls="tab-pagetypes" aria-selected="false">페이지 타입 정보</button>
+      <button role="tab" id="tabbtn-rules" aria-controls="tab-rules" aria-selected="false">최적화 룰 정보</button>
+      <button role="tab" id="tabbtn-config" aria-controls="tab-config" aria-selected="false">환경 설정 (spin.toml)</button>
+    </div>
+
+    <!-- ========== 탭A: 도메인 정보 ========== -->
+    <section id="tab-domain" role="tabpanel" aria-labelledby="tabbtn-domain">
+      <!-- Global 선택 시: 레지스트리 개요 -->
+      <div id="domain-global-panel" hidden>
+        <div class="panel">
+          <h2>도메인 레지스트리</h2>
+          <p style="margin-top:0;color:var(--muted)">실시간 최적화 요청은 target URL의 <strong>host</strong>로 도메인을 자동 매칭합니다 (<code>customer=</code> 파라미터 없음). 아래 레지스트리가 매칭의 데이터 소스입니다.</p>
+          <div class="row" style="margin-bottom:12px">
+            <label for="default-domain-select" style="margin:0">기본(default) 도메인</label>
+            <select id="default-domain-select" style="width:auto" title="레지스트리의 default 도메인 — 매칭 실패 시 폴백"></select>
+            <button id="default-domain-save" class="primary">기본 도메인 저장</button>
+          </div>
+          <table aria-label="등록된 도메인 목록">
+            <thead><tr><th>id</th><th>이름</th><th>host_patterns</th><th>page_types</th><th></th></tr></thead>
+            <tbody id="domain-table-body"></tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h2>새 도메인 추가</h2>
+          <div class="form-grid">
+            <div class="field">
+              <label for="add-id">도메인 id</label>
+              <input type="text" id="add-id" placeholder="예: coupang" title="KV 키에 쓰이는 식별자. 소문자/숫자/-_.만 허용">
+              <small class="help">허용 문자: <code>a-z 0-9 - _ .</code></small>
+            </div>
+            <div class="field">
+              <label for="add-name">이름</label>
+              <input type="text" id="add-name" placeholder="예: Coupang" title="표시용 이름">
+            </div>
+            <div class="field wide">
+              <label for="add-patterns">host_patterns (콤마로 구분)</label>
+              <input type="text" id="add-patterns" placeholder="예: coupang.com, *.coupang.com" title="URL host 매칭 패턴. *는 임의 문자(멀티 라벨) 매칭">
+            </div>
+            <div class="field wide">
+              <label for="add-pagetypes">page_types (콤마로 구분, 선택)</label>
+              <input type="text" id="add-pagetypes" placeholder="예: product, search" title="허용: product, category, search, landing, article, policy, unknown">
+            </div>
+          </div>
+          <ul id="add-domain-errors" class="errors"></ul>
+          <div class="row" style="margin-top:12px">
+            <button id="add-domain-btn" class="primary">도메인 추가</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 개별 도메인 선택 시: 편집 -->
+      <div id="domain-edit-panel" hidden>
+        <div class="panel">
+          <h2 id="domain-edit-title">도메인 편집</h2>
+          <div class="form-grid">
+            <div class="field">
+              <label for="dom-id">도메인 id</label>
+              <input type="text" id="dom-id" disabled title="식별자는 변경할 수 없습니다 (KV 키에 사용)">
+            </div>
+            <div class="field">
+              <label for="dom-name">이름</label>
+              <input type="text" id="dom-name" title="표시용 이름">
+            </div>
+            <div class="field wide">
+              <label for="dom-patterns">host_patterns (콤마로 여러 개 입력 — 저장 시 배열로 분해)</label>
+              <input type="text" id="dom-patterns" placeholder="coupang.com, *.coupang.com" title="각 항목에 * 와일드카드 허용. 허용 문자: a-z 0-9 - . *">
+              <small class="help"><code>*</code> 없으면 <strong>정확 매칭</strong>(apex만 — <code>coupang.com</code>은 apex만 매칭), <code>*.coupang.com</code>은 서브도메인(멀티 라벨 포함) 매칭. 여러 도메인이 겹치면 <strong>가장 긴 패턴이 우선</strong>합니다. 최대 32개, 각 253바이트 이하, 문자 <code>a-z 0-9 - . *</code>만.</small>
+            </div>
+            <div class="field wide">
+              <label for="dom-pagetypes">page_types (콤마로 구분)</label>
+              <input type="text" id="dom-pagetypes" placeholder="product, search" title="이 도메인이 사용하는 페이지 타입 목록">
+              <small class="help">허용값: product, category, search, landing, article, policy, unknown</small>
+            </div>
+          </div>
+          <ul id="domain-errors" class="errors"></ul>
+          <div class="row spread" style="margin-top:14px">
+            <button id="domain-save-btn" class="primary">저장</button>
+            <button id="domain-delete-btn" class="danger">이 도메인 삭제</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 탭B: 페이지 타입 정보 ========== -->
+    <section id="tab-pagetypes" role="tabpanel" aria-labelledby="tabbtn-pagetypes" hidden>
+      <div class="panel">
+        <div class="row spread">
+          <h2 id="pt-title">페이지 타입 설정</h2>
+          <span id="pt-found-badge" class="badge"></span>
+        </div>
+        <p style="margin-top:0;color:var(--muted)">URL 패턴으로 페이지 타입(product/category/…)을 판정하는 hot-path 설정입니다. 우선순위가 높은 규칙부터 평가됩니다.</p>
+        <div class="form-grid">
+          <div class="field">
+            <label for="pt-enabled" style="display:inline">활성화(enabled)</label>
+            <input type="checkbox" id="pt-enabled" title="페이지 타입 판정 활성화 여부" style="width:auto;margin-left:6px">
+          </div>
+          <div class="field">
+            <label for="pt-fallback">폴백(fallback)</label>
+            <select id="pt-fallback" title="어떤 규칙에도 매칭되지 않을 때 사용할 페이지 타입"></select>
+          </div>
+          <div class="field">
+            <label for="pt-version">버전(version)</label>
+            <input type="number" id="pt-version" min="1" step="1" title="설정 문서 버전 (정수)">
+          </div>
+        </div>
+        <h3 style="margin:16px 0 6px">hot_path_rules</h3>
+        <small class="help" style="margin-bottom:8px">각 행: 페이지 타입 + URL 패턴(콤마 구분, <code>*</code> 와일드카드) + 우선순위. 저장 시 콤마 입력은 배열로 분해됩니다.</small>
+        <div id="hpr-rows"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="hpr-add-btn">+ 규칙 추가</button>
+        </div>
+        <ul id="pt-errors" class="errors"></ul>
+        <div class="row" style="margin-top:14px">
+          <button id="pt-save-btn" class="primary">페이지 타입 설정 저장</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 탭C: 최적화 룰 정보 ========== -->
+    <section id="tab-rules" role="tabpanel" aria-labelledby="tabbtn-rules" hidden>
+      <div class="panel">
+        <div class="row spread">
+          <h2 id="rules-title">최적화 룰</h2>
+          <div class="row">
+            <label for="rules-pt-filter" style="margin:0">page_type</label>
+            <select id="rules-pt-filter" style="width:auto" title="선택 시 해당 page_type 매니페스트를 조회합니다"></select>
+            <button id="rules-refresh-btn">새로고침</button>
+            <button id="rule-new-btn" class="primary">+ 새 룰</button>
+          </div>
+        </div>
+        <p id="rules-scope-desc" style="margin-top:0;color:var(--muted)"></p>
+        <div id="rules-list"></div>
+      </div>
+
+      <!-- 룰 편집기 -->
+      <div id="rule-editor" class="panel" hidden>
+        <h2 id="rule-editor-title">룰 편집</h2>
+        <div class="form-grid">
+          <div class="field">
+            <label for="re-rule-id">rule_id *</label>
+            <input type="text" id="re-rule-id" title="룰의 고유 식별자 (최대 96바이트, 영숫자/-_.)">
+            <small class="help">고유 식별자. 최대 96바이트.</small>
+          </div>
+          <div class="field">
+            <label for="re-name">name *</label>
+            <input type="text" id="re-name" title="사람이 읽는 룰 이름 (최대 160바이트)">
+            <small class="help">표시용 이름. 최대 160바이트.</small>
+          </div>
+          <div class="field">
+            <label for="re-type">type *</label>
+            <select id="re-type" title="12개 RuleType 중 하나 — 카테고리 그룹핑에 사용"></select>
+            <small class="help">룰 실행 방식(RuleType).</small>
+          </div>
+          <div class="field">
+            <label for="re-exec">execution_class</label>
+            <select id="re-exec" title="streaming: 스트리밍 중 적용 / buffered: 전체 버퍼 후 적용">
+              <option value="streaming">streaming</option>
+              <option value="buffered">buffered</option>
+            </select>
+            <small class="help">스트리밍 적용 여부.</small>
+          </div>
+          <div class="field">
+            <label for="re-scope-level">scope.level</label>
+            <select id="re-scope-level" title="룰 적용 범위 수준"></select>
+            <small class="help">global / customer / page_type / customer_page_type</small>
+          </div>
+          <div class="field">
+            <label for="re-scope-customer">scope.customer</label>
+            <input type="text" id="re-scope-customer" title="적용 대상 도메인 id (global 룰이면 비움)">
+            <small class="help">대상 도메인 id.</small>
+          </div>
+          <div class="field">
+            <label for="re-scope-pt">scope.page_type</label>
+            <select id="re-scope-pt" title="적용 대상 페이지 타입 (없으면 비움)"></select>
+            <small class="help">대상 페이지 타입.</small>
+          </div>
+          <div class="field">
+            <label for="re-scope-locale">scope.locale (콤마 구분)</label>
+            <input type="text" id="re-scope-locale" placeholder="ko, en" title="적용 로케일 목록. 비우면 전체">
+            <small class="help">비우면 모든 로케일에 적용.</small>
+          </div>
+          <div class="field">
+            <label for="re-priority">priority *</label>
+            <input type="number" id="re-priority" min="0" max="10000" step="1" title="0~10000. 높을수록 먼저 적용">
+            <small class="help">0~10000 정수.</small>
+          </div>
+          <div class="field">
+            <label for="re-version">version</label>
+            <input type="number" id="re-version" min="1" step="1" title="룰 문서 버전. KV 키(rules/v1/rule/{id}/version/{n})에 사용">
+            <small class="help">저장 KV 키에 포함되는 버전.</small>
+          </div>
+          <div class="field">
+            <label for="re-status">status</label>
+            <select id="re-status" title="draft: 작성 중 / published: 배포 / deprecated: 사용 중단 예정 / archived: 보관"></select>
+            <small class="help">룰 라이프사이클 상태.</small>
+          </div>
+          <div class="field">
+            <label style="display:inline" for="re-enabled">enabled</label>
+            <input type="checkbox" id="re-enabled" style="width:auto;margin-left:6px" title="비활성화하면 매니페스트에 있어도 적용되지 않음">
+            <small class="help">룰 활성화 여부.</small>
+          </div>
+          <div class="field wide">
+            <label for="re-conditions">conditions (JSON 객체)</label>
+            <textarea id="re-conditions" rows="3" placeholder="{}" title="룰 적용 조건 (JSON). 비우면 무조건 적용"></textarea>
+            <small class="help">적용 조건. 비우면 <code>{}</code>.</small>
+          </div>
+          <div class="field wide">
+            <label for="re-actions">actions * (JSON 배열, 최대 16개)</label>
+            <textarea id="re-actions" rows="5" placeholder='[ { "op": "remove_element", "selector": "#wa-header" } ]' title="op: remove_element | flatten_element | remove_attribute | keep_attribute | remove_text_token | remove_text_phrase | protect_element | promote_tag | inject_json_ld | prune_by_link_density"></textarea>
+            <small class="help">각 action은 <code>op</code> 필수. selector는 최대 512바이트. 허용 op: remove_element, flatten_element, remove_attribute, keep_attribute, remove_text_token, remove_text_phrase, protect_element, promote_tag, inject_json_ld, prune_by_link_density</small>
+          </div>
+          <div class="field">
+            <label style="display:inline" for="re-destructive">safety.destructive</label>
+            <input type="checkbox" id="re-destructive" style="width:auto;margin-left:6px" title="콘텐츠를 파괴적으로 변경하는 룰인지 표시">
+            <small class="help">파괴적 변경 여부.</small>
+          </div>
+          <div class="field">
+            <label style="display:inline" for="re-preview">safety.requires_preview</label>
+            <input type="checkbox" id="re-preview" style="width:auto;margin-left:6px" title="배포 전 미리보기 승인이 필요한 룰인지 표시">
+            <small class="help">미리보기 승인 필요 여부.</small>
+          </div>
+          <div class="field">
+            <label for="re-src-type">metadata.source.type</label>
+            <input type="text" id="re-src-type" placeholder="manual, schema.org, …" title="룰 근거 출처의 유형 — GEO/AEO 신뢰성 판단에 사용">
+            <small class="help">룰 근거 출처 유형.</small>
+          </div>
+          <div class="field">
+            <label for="re-src-ref">metadata.source.reference</label>
+            <input type="text" id="re-src-ref" placeholder="URL 또는 문서 참조" title="출처 참조(URL/문서). AI 검색 인용 보존(GEO/AEO)에 활용">
+            <small class="help">출처 참조. 인용 보존용.</small>
+          </div>
+          <div class="field wide">
+            <label for="re-citations">metadata.citations (콤마 구분)</label>
+            <input type="text" id="re-citations" placeholder="https://schema.org/Product" title="보존해야 할 인용 출처 목록 — GEO/AEO에서 답변 인용 근거로 유지">
+            <small class="help">GEO/AEO 인용 보존용 출처 URL 목록.</small>
+          </div>
+          <div class="field">
+            <label for="re-tags">metadata.tags (콤마 구분)</label>
+            <input type="text" id="re-tags" placeholder="geo, aeo" title="검색/분류용 태그">
+            <small class="help">분류 태그.</small>
+          </div>
+          <div class="field">
+            <label for="re-owner">metadata.owner</label>
+            <input type="text" id="re-owner" placeholder="담당자" title="룰 담당자">
+            <small class="help">담당자(선택).</small>
+          </div>
+          <div class="field">
+            <label for="re-risk">metadata.risk_level</label>
+            <select id="re-risk" title="룰 적용 리스크 수준">
+              <option value="">(없음)</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+            <small class="help">리스크 수준(선택).</small>
+          </div>
+          <div class="field">
+            <label style="display:inline" for="re-attach">현재 매니페스트에 등록</label>
+            <input type="checkbox" id="re-attach" style="width:auto;margin-left:6px" checked title="저장 시 현재 선택된 도메인/page_type 매니페스트에 룰 포인터를 추가/갱신">
+            <small class="help">해제하면 룰 본문만 저장됩니다.</small>
+          </div>
+        </div>
+        <ul id="re-errors" class="errors"></ul>
+        <div class="row spread" style="margin-top:14px">
+          <div class="row">
+            <button id="re-preview-btn" class="primary">JSON 미리보기 → 저장</button>
+            <button id="re-cancel-btn">닫기</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 환경 설정 (spin.toml) — 템플릿 + 수도코드만 ========== -->
+    <section id="tab-config" role="tabpanel" aria-labelledby="tabbtn-config" hidden>
+      <div class="panel">
+        <h2>환경 설정 (spin.toml 변수) — 준비 중</h2>
+        <p style="color:var(--muted);margin-top:0">geo-optimizer의 <code>spin.toml</code> 변수 스켈레톤입니다. 실제 로드/저장은 아직 연동되지 않았습니다(읽기 전용 스텁).</p>
+        <div id="config-fields" class="form-grid"></div>
+        <pre aria-label="구현 예정 수도코드">// TODO(config): GET /api/config 로 spin.toml 변수 로드
+// TODO(config): POST /api/config 로 저장 (BFF 연동 예정)</pre>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- JSON 미리보기 모달 -->
+<div id="modal" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <h3 id="modal-title">저장할 룰 JSON 미리보기</h3>
+    <pre id="modal-pre" tabindex="0"></pre>
+    <div class="modal-actions">
+      <button id="modal-cancel">취소</button>
+      <button id="modal-save" class="primary">저장</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/*
+ * 공유 API 계약 — shared/api-contract.js 의 인라인 복사본.
+ * 이 블록을 수정하지 말고 shared/api-contract.js 를 수정한 뒤 동기화할 것.
+ * 검증: cd bff && npm run check:contract
+ */
+/* ===== GEO ADMIN SHARED CONTRACT BEGIN ===== */
+const GeoContract = (() => {
+  'use strict';
+
+  // ---- HTTP API 경로 (BFF가 노출, web이 호출) ----
+  const API = {
+    AUTH_LOGIN: '/api/auth/login',
+    AUTH_LOGOUT: '/api/auth/logout',
+    AUTH_ME: '/api/auth/me',
+    DOMAINS: '/api/domains',
+    DOMAIN_PAGE_TYPES: (id) => `/api/domains/${encodeURIComponent(id)}/page-types`,
+    RULES: '/api/rules',
+    RULE: (ruleId) => `/api/rules/${encodeURIComponent(ruleId)}`,
+    CONFIG: '/api/config',
+    HEALTH: '/api/health',
+  };
+
+  // UI의 "공통(Global)" 선택을 나타내는 예약 id. 도메인 id로는 사용 금지.
+  const GLOBAL_ID = '__global__';
+
+  const DEFAULT_ENV = 'prod';
+  const DEFAULT_CHANNEL = 'stable';
+
+  // ---- Spin KV 키 스킴 (KV 경로 세그먼트는 하위호환상 customer/{id}) ----
+  const KV = {
+    registry: (env = DEFAULT_ENV) => `rules/v1/index/${env}/customers`,
+    manifestScope: ({ customer, pageType }) => {
+      if (customer && pageType) return `customer/${customer}/page_type/${pageType}`;
+      if (customer) return `customer/${customer}`;
+      if (pageType) return `page_type/${pageType}`;
+      return 'global';
+    },
+    manifest: (scope, env = DEFAULT_ENV, channel = DEFAULT_CHANNEL) =>
+      `rules/v1/manifest/${env}/${channel}/${scope}`,
+    rule: (ruleId, version) => `rules/v1/rule/${ruleId}/version/${version}`,
+    pageType: (customerId, env = DEFAULT_ENV) =>
+      `rules/v1/page-type/${env}/${customerId ? `customer/${customerId}` : 'global'}`,
+  };
+
+  // ---- 도메인 열거값 ----
+  const RULE_TYPES = [
+    'selector_remove', 'attribute_filter', 'text_token_remove', 'text_phrase_remove',
+    'container_hint_remove', 'role_policy', 'div_policy', 'image_policy',
+    'json_ld_policy', 'link_density_prune', 'dedup_policy', 'mode_policy',
+  ];
+
+  const RULE_STATUSES = ['draft', 'published', 'deprecated', 'archived'];
+
+  const ACTION_OPS = [
+    'remove_element', 'flatten_element', 'remove_attribute', 'keep_attribute',
+    'remove_text_token', 'remove_text_phrase', 'protect_element', 'promote_tag',
+    'inject_json_ld', 'prune_by_link_density',
+  ];
+
+  const PAGE_TYPES = ['product', 'category', 'search', 'landing', 'article', 'policy', 'unknown'];
+
+  const SCOPE_LEVELS = ['global', 'customer', 'page_type', 'customer_page_type'];
+
+  // ---- 최적화 룰 카테고리 (RuleType → UI 그룹핑) ----
+  const RULE_CATEGORIES = [
+    { id: 'structure', label: '구조 제거',
+      description: '헤더/GNB/광고 컨테이너 등 HTML 구조 요소를 선택자·휴리스틱으로 제거하거나 평탄화합니다.',
+      types: ['selector_remove', 'container_hint_remove', 'div_policy', 'role_policy'] },
+    { id: 'attributes', label: '속성 정제',
+      description: '불필요한 HTML 속성을 제거하거나 허용 목록만 유지합니다.',
+      types: ['attribute_filter'] },
+    { id: 'text', label: '텍스트 정제',
+      description: '노이즈 토큰·문구(광고 문구 등)를 텍스트에서 제거합니다.',
+      types: ['text_token_remove', 'text_phrase_remove'] },
+    { id: 'media', label: '이미지/미디어',
+      description: '이미지·미디어 요소의 유지/제거/속성 처리 정책을 정의합니다.',
+      types: ['image_policy'] },
+    { id: 'semantic', label: '시맨틱/구조화 데이터',
+      description: 'JSON-LD 등 구조화 데이터를 보존·주입해 AI 검색(GEO/AEO) 인용 가능성을 높입니다.',
+      types: ['json_ld_policy'] },
+    { id: 'dedup', label: '중복 제거',
+      description: '반복되는 블록·텍스트를 중복 제거합니다.',
+      types: ['dedup_policy'] },
+    { id: 'link-density', label: '링크 밀도',
+      description: '링크 밀도가 높은 내비게이션성 블록을 가지치기합니다.',
+      types: ['link_density_prune'] },
+    { id: 'mode', label: '모드 정책',
+      description: '요청 프로파일/모드별 전체 최적화 동작을 제어합니다.',
+      types: ['mode_policy'] },
+  ];
+
+  // ---- 검증 한계값 (클라이언트/BFF 동일 적용) ----
+  const LIMITS = {
+    CUSTOMERS_MIN: 1,
+    CUSTOMERS_MAX: 256,
+    HOST_PATTERNS_MAX: 32,
+    HOST_PATTERN_MAX_BYTES: 253,
+    PRIORITY_MIN: 0,
+    PRIORITY_MAX: 10000,
+    ACTIONS_MAX: 16,
+    RULE_ID_MAX_BYTES: 96,
+    RULE_NAME_MAX_BYTES: 160,
+    SELECTOR_MAX_BYTES: 512,
+  };
+
+  const DOMAIN_ID_RE = /^[a-z0-9\-_.]+$/;
+  const HOST_PATTERN_RE = /^[a-z0-9\-.*]+$/;
+  const RULE_ID_RE = /^[a-zA-Z0-9\-_.]+$/;
+
+  const byteLength = (s) => new TextEncoder().encode(String(s)).length;
+
+  // ---- 검증기: 실패 사유 문자열 배열 반환 (빈 배열이면 통과) ----
+
+  function validateHostPattern(p) {
+    if (typeof p !== 'string' || p.length === 0) return 'host 패턴이 비어 있습니다.';
+    if (byteLength(p) > LIMITS.HOST_PATTERN_MAX_BYTES)
+      return `host 패턴 "${p}"이 ${LIMITS.HOST_PATTERN_MAX_BYTES}바이트를 초과합니다.`;
+    if (!HOST_PATTERN_RE.test(p))
+      return `host 패턴 "${p}"에 허용되지 않는 문자가 있습니다. (허용: a-z 0-9 - . *)`;
+    return null;
+  }
+
+  function validateRegistry(reg) {
+    const errors = [];
+    if (!reg || typeof reg !== 'object') return ['레지스트리가 객체가 아닙니다.'];
+    const customers = reg.customers;
+    if (!Array.isArray(customers)) return ['customers가 배열이 아닙니다.'];
+    if (customers.length < LIMITS.CUSTOMERS_MIN || customers.length > LIMITS.CUSTOMERS_MAX)
+      errors.push(`customers는 ${LIMITS.CUSTOMERS_MIN}~${LIMITS.CUSTOMERS_MAX}개여야 합니다. (현재 ${customers.length})`);
+    const seen = new Set();
+    for (const c of customers) {
+      if (!c || typeof c !== 'object') { errors.push('customers 항목이 객체가 아닙니다.'); continue; }
+      const id = c.id;
+      if (typeof id !== 'string' || !DOMAIN_ID_RE.test(id))
+        errors.push(`도메인 id "${id}"가 유효하지 않습니다. (허용: a-z 0-9 - _ .)`);
+      else if (id === GLOBAL_ID)
+        errors.push(`"${GLOBAL_ID}"는 예약된 id입니다.`);
+      else if (seen.has(id))
+        errors.push(`도메인 id "${id}"가 중복되었습니다.`);
+      seen.add(id);
+      if (typeof c.name !== 'string' || c.name.trim().length === 0)
+        errors.push(`도메인 "${id}"의 name이 비어 있습니다.`);
+      const hp = c.host_patterns;
+      if (!Array.isArray(hp) || hp.length === 0)
+        errors.push(`도메인 "${id}"의 host_patterns가 비어 있습니다.`);
+      else {
+        if (hp.length > LIMITS.HOST_PATTERNS_MAX)
+          errors.push(`도메인 "${id}"의 host_patterns는 최대 ${LIMITS.HOST_PATTERNS_MAX}개입니다.`);
+        for (const p of hp) {
+          const e = validateHostPattern(p);
+          if (e) errors.push(`도메인 "${id}": ${e}`);
+        }
+      }
+      if (c.page_types !== undefined) {
+        if (!Array.isArray(c.page_types)) errors.push(`도메인 "${id}"의 page_types가 배열이 아닙니다.`);
+        else for (const pt of c.page_types)
+          if (!PAGE_TYPES.includes(pt)) errors.push(`도메인 "${id}"의 page_type "${pt}"는 허용값이 아닙니다.`);
+      }
+    }
+    if (customers.length > 0) {
+      if (typeof reg.default !== 'string' || !seen.has(reg.default))
+        errors.push(`default("${reg.default}")가 customers에 존재하지 않습니다.`);
+    }
+    return errors;
+  }
+
+  function validateRule(rule) {
+    const errors = [];
+    if (!rule || typeof rule !== 'object') return ['룰이 객체가 아닙니다.'];
+    if (typeof rule.rule_id !== 'string' || rule.rule_id.length === 0)
+      errors.push('rule_id는 필수입니다.');
+    else {
+      if (!RULE_ID_RE.test(rule.rule_id)) errors.push('rule_id에 허용되지 않는 문자가 있습니다. (허용: 영숫자 - _ .)');
+      if (byteLength(rule.rule_id) > LIMITS.RULE_ID_MAX_BYTES)
+        errors.push(`rule_id는 최대 ${LIMITS.RULE_ID_MAX_BYTES}바이트입니다.`);
+    }
+    if (typeof rule.name !== 'string' || rule.name.trim().length === 0)
+      errors.push('name은 필수입니다.');
+    else if (byteLength(rule.name) > LIMITS.RULE_NAME_MAX_BYTES)
+      errors.push(`name은 최대 ${LIMITS.RULE_NAME_MAX_BYTES}바이트입니다.`);
+    if (!RULE_TYPES.includes(rule.type))
+      errors.push(`type("${rule.type}")은 12개 RuleType 중 하나여야 합니다.`);
+    if (!Number.isInteger(rule.priority) || rule.priority < LIMITS.PRIORITY_MIN || rule.priority > LIMITS.PRIORITY_MAX)
+      errors.push(`priority는 ${LIMITS.PRIORITY_MIN}~${LIMITS.PRIORITY_MAX} 정수여야 합니다.`);
+    if (rule.version !== undefined && (!Number.isInteger(rule.version) || rule.version < 1))
+      errors.push('version은 1 이상의 정수여야 합니다.');
+    if (rule.status !== undefined && !RULE_STATUSES.includes(rule.status))
+      errors.push(`status("${rule.status}")는 ${RULE_STATUSES.join('|')} 중 하나여야 합니다.`);
+    if (rule.enabled !== undefined && typeof rule.enabled !== 'boolean')
+      errors.push('enabled는 boolean이어야 합니다.');
+    const actions = rule.actions;
+    if (!Array.isArray(actions) || actions.length === 0)
+      errors.push('actions는 1개 이상이어야 합니다.');
+    else {
+      if (actions.length > LIMITS.ACTIONS_MAX)
+        errors.push(`actions는 최대 ${LIMITS.ACTIONS_MAX}개입니다.`);
+      actions.forEach((a, i) => {
+        if (!a || typeof a !== 'object') { errors.push(`actions[${i}]가 객체가 아닙니다.`); return; }
+        if (!ACTION_OPS.includes(a.op))
+          errors.push(`actions[${i}].op("${a.op}")는 허용된 op가 아닙니다.`);
+        if (a.selector !== undefined) {
+          if (typeof a.selector !== 'string') errors.push(`actions[${i}].selector가 문자열이 아닙니다.`);
+          else if (byteLength(a.selector) > LIMITS.SELECTOR_MAX_BYTES)
+            errors.push(`actions[${i}].selector는 최대 ${LIMITS.SELECTOR_MAX_BYTES}바이트입니다.`);
+        }
+      });
+    }
+    if (rule.scope !== undefined) {
+      const s = rule.scope;
+      if (!s || typeof s !== 'object') errors.push('scope가 객체가 아닙니다.');
+      else {
+        if (s.level !== undefined && !SCOPE_LEVELS.includes(s.level))
+          errors.push(`scope.level("${s.level}")은 ${SCOPE_LEVELS.join('|')} 중 하나여야 합니다.`);
+        if (s.page_type != null && s.page_type !== '' && !PAGE_TYPES.includes(s.page_type))
+          errors.push(`scope.page_type("${s.page_type}")은 허용값이 아닙니다.`);
+        if (s.locale !== undefined && !Array.isArray(s.locale))
+          errors.push('scope.locale은 배열이어야 합니다.');
+      }
+    }
+    return errors;
+  }
+
+  function validatePageTypeConfig(cfg) {
+    const errors = [];
+    if (!cfg || typeof cfg !== 'object') return ['페이지타입 설정이 객체가 아닙니다.'];
+    if (cfg.enabled !== undefined && typeof cfg.enabled !== 'boolean')
+      errors.push('enabled는 boolean이어야 합니다.');
+    if (cfg.fallback !== undefined && !PAGE_TYPES.includes(cfg.fallback))
+      errors.push(`fallback("${cfg.fallback}")은 허용된 page_type이 아닙니다.`);
+    if (cfg.version !== undefined && (!Number.isInteger(cfg.version) || cfg.version < 1))
+      errors.push('version은 1 이상의 정수여야 합니다.');
+    const rules = cfg.hot_path_rules;
+    if (!Array.isArray(rules)) return errors.concat(['hot_path_rules가 배열이 아닙니다.']);
+    rules.forEach((r, i) => {
+      if (!r || typeof r !== 'object') { errors.push(`hot_path_rules[${i}]가 객체가 아닙니다.`); return; }
+      if (!PAGE_TYPES.includes(r.page_type))
+        errors.push(`hot_path_rules[${i}].page_type("${r.page_type}")은 허용값이 아닙니다.`);
+      if (!Number.isInteger(r.priority))
+        errors.push(`hot_path_rules[${i}].priority는 정수여야 합니다.`);
+      if (!Array.isArray(r.url_patterns) || r.url_patterns.some((p) => typeof p !== 'string' || p.length === 0))
+        errors.push(`hot_path_rules[${i}].url_patterns는 비어있지 않은 문자열 배열이어야 합니다.`);
+      if (r.query_params !== undefined && !Array.isArray(r.query_params))
+        errors.push(`hot_path_rules[${i}].query_params는 배열이어야 합니다.`);
+    });
+    return errors;
+  }
+
+  return {
+    API, KV, GLOBAL_ID, DEFAULT_ENV, DEFAULT_CHANNEL,
+    RULE_TYPES, RULE_STATUSES, ACTION_OPS, PAGE_TYPES, SCOPE_LEVELS, RULE_CATEGORIES, LIMITS,
+    DOMAIN_ID_RE, HOST_PATTERN_RE, RULE_ID_RE, byteLength,
+    validateHostPattern, validateRegistry, validateRule, validatePageTypeConfig,
+  };
+})();
+if (typeof module === 'object' && module.exports) module.exports = GeoContract;
+/* ===== GEO ADMIN SHARED CONTRACT END ===== */
+</script>
+
+<script>
+'use strict';
+(() => {
+  const C = GeoContract;
+
+  // ======================================================================
+  // Mock 전환 플래그: BFF 없이 브라우저 단독으로 데모하려면 true.
+  // file:// 로 직접 열면 자동으로 mock 모드가 된다.
+  // 실서버 전환: USE_MOCK=false 상태로 BFF(:8787)가 서빙하는 이 페이지를 열면 끝.
+  // ======================================================================
+  let USE_MOCK = false;
+  if (location.protocol === 'file:') USE_MOCK = true;
+
+  // ---------------- 유틸 ----------------
+  const $ = (sel, root = document) => root.querySelector(sel);
+
+  // XSS 방지: 모든 동적 텍스트는 textContent 경유로만 삽입한다.
+  function el(tag, attrs = {}, ...children) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') node.className = v;
+      else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
+      else if (typeof v === 'boolean') { if (v) node.setAttribute(k, ''); }
+      else if (v != null) node.setAttribute(k, String(v));
+    }
+    for (const child of children.flat(Infinity)) {
+      if (child == null) continue;
+      node.append(child.nodeType ? child : document.createTextNode(String(child)));
+    }
+    return node;
+  }
+
+  const parseCsv = (str) => String(str || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+  let toastTimer = null;
+  function toast(msg, kind = 'info') {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.className = kind === 'error' ? 'show error' : 'show';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.className = ''; }, 3500);
+  }
+
+  function showErrors(sel, errors) {
+    const ul = $(sel);
+    ul.replaceChildren(...errors.map((e) => el('li', {}, e)));
+  }
+
+  class ApiError extends Error {
+    constructor(message, status, errors) {
+      super(message);
+      this.status = status;
+      this.errors = errors || [];
+    }
+  }
+
+  // ---------------- 실서버 어댑터 (BFF fetch) ----------------
+  function createRealApi() {
+    let csrfToken = null;
+
+    async function request(path, { method = 'GET', body } = {}) {
+      let res;
+      try {
+        res = await fetch(path, {
+          method,
+          credentials: 'same-origin',
+          headers: {
+            ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+            ...(csrfToken && method !== 'GET' ? { 'x-csrf-token': csrfToken } : {}),
+          },
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        });
+      } catch {
+        throw new ApiError('네트워크 오류: BFF 서버에 연결할 수 없습니다.', 0);
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 401 && path !== C.API.AUTH_ME && path !== C.API.AUTH_LOGIN) {
+          onSessionExpired();
+        }
+        throw new ApiError(data.error || `요청 실패 (HTTP ${res.status})`, res.status, data.errors);
+      }
+      if (data.csrfToken) csrfToken = data.csrfToken;
+      return data;
+    }
+
+    return {
+      isMock: false,
+      async login(username, password) {
+        const d = await request(C.API.AUTH_LOGIN, { method: 'POST', body: { username, password } });
+        return d.user;
+      },
+      async logout() { await request(C.API.AUTH_LOGOUT, { method: 'POST' }); csrfToken = null; },
+      async me() {
+        try {
+          const d = await request(C.API.AUTH_ME);
+          return d.authenticated ? d.user : null;
+        } catch (e) {
+          if (e.status === 401) return null;
+          throw e;
+        }
+      },
+      getDomains: () => request(C.API.DOMAINS),
+      saveDomains: (registry) => request(C.API.DOMAINS, { method: 'POST', body: registry }),
+      getPageTypes: (id) => request(C.API.DOMAIN_PAGE_TYPES(id)),
+      savePageTypes: (id, cfg) => request(C.API.DOMAIN_PAGE_TYPES(id), { method: 'POST', body: cfg }),
+      listRules({ scope, domain, pageType }) {
+        const q = new URLSearchParams();
+        if (scope === 'global') q.set('scope', 'global');
+        else q.set('domain', domain);
+        if (pageType) q.set('page_type', pageType);
+        return request(`${C.API.RULES}?${q}`);
+      },
+      saveRule(rule, { version, attach, domain, pageType }) {
+        const q = new URLSearchParams({ version: String(version) });
+        if (attach) {
+          q.set('attach', '1');
+          if (domain) q.set('domain', domain);
+          if (pageType) q.set('page_type', pageType);
+        }
+        return request(`${C.API.RULE(rule.rule_id)}?${q}`, { method: 'POST', body: rule });
+      },
+      getConfig: () => request(C.API.CONFIG),
+    };
+  }
+
+  // ---------------- Mock 어댑터 (BFF 미기동/오프라인용) ----------------
+  // 실서버 어댑터와 동일 시그니처 — 무수정 교체 가능.
+  // 도메인 샘플(coupang/samsung/lg)은 데이터일 뿐, 코드는 어떤 도메인명에도 종속되지 않는다.
+  function createMockApi() {
+    const mkRule = (o) => ({
+      schema_version: '1.0', execution_class: 'streaming', priority: 100, enabled: true,
+      version: 1, status: 'published', conditions: {},
+      safety: { destructive: true, requires_preview: false },
+      metadata: { source: { type: 'manual', reference: 'seed' }, citations: [], tags: [], owner: null, risk_level: null },
+      ...o,
+    });
+    const seedRules = [
+      mkRule({ rule_id: 'rule_global_attribute_filter', name: 'Strip inline styles / tracking attrs', type: 'attribute_filter',
+        scope: { level: 'global', customer: null, page_type: null, locale: [] }, priority: 50,
+        safety: { destructive: false, requires_preview: false },
+        actions: [{ op: 'remove_attribute', selector: '*', attribute: 'style' }, { op: 'remove_attribute', selector: '*', attribute: 'onclick' }] }),
+      mkRule({ rule_id: 'rule_global_dedup_blocks', name: 'Deduplicate repeated widgets', type: 'dedup_policy',
+        scope: { level: 'global', customer: null, page_type: null, locale: [] }, priority: 40,
+        actions: [{ op: 'remove_element', selector: '[data-dedup-candidate]' }] }),
+      mkRule({ rule_id: 'rule_global_link_density_prune', name: 'Prune high link-density blocks', type: 'link_density_prune',
+        scope: { level: 'global', customer: null, page_type: null, locale: [] }, priority: 30,
+        actions: [{ op: 'prune_by_link_density', selector: 'nav, footer, aside', params: { threshold: 0.8 } }] }),
+      mkRule({ rule_id: 'rule_global_mode_default', name: 'Default mode: protect main content', type: 'mode_policy',
+        scope: { level: 'global', customer: null, page_type: null, locale: [] }, priority: 10,
+        safety: { destructive: false, requires_preview: false },
+        actions: [{ op: 'protect_element', selector: 'main, article' }] }),
+      mkRule({ rule_id: 'rule_coupang_jsonld_product', name: 'Preserve & inject Product JSON-LD', type: 'json_ld_policy',
+        scope: { level: 'customer', customer: 'coupang', page_type: null, locale: [] }, priority: 90,
+        safety: { destructive: false, requires_preview: false },
+        metadata: { source: { type: 'schema.org', reference: 'https://schema.org/Product' }, citations: ['https://schema.org/Product'], tags: ['geo', 'aeo'], owner: null, risk_level: 'low' },
+        actions: [{ op: 'inject_json_ld', selector: 'head', params: { '@type': 'Product' } }] }),
+      mkRule({ rule_id: 'rule_coupang_phrase_ad', name: 'Remove ad phrases', type: 'text_phrase_remove',
+        scope: { level: 'customer', customer: 'coupang', page_type: null, locale: ['ko'] }, priority: 80,
+        actions: [{ op: 'remove_text_phrase', phrase: '광고 상품입니다' }] }),
+      mkRule({ rule_id: 'rule_coupang_product_remove_header_gnb', name: 'Remove header GNB', type: 'selector_remove',
+        scope: { level: 'customer_page_type', customer: 'coupang', page_type: 'product', locale: [] }, priority: 100,
+        actions: [{ op: 'remove_element', selector: '#wa-header' }] }),
+      mkRule({ rule_id: 'rule_samsung_container_promo', name: 'Remove promo containers', type: 'container_hint_remove',
+        scope: { level: 'customer', customer: 'samsung', page_type: null, locale: [] }, priority: 85,
+        actions: [{ op: 'remove_element', selector: '[data-promo], .banner-carousel' }] }),
+      mkRule({ rule_id: 'rule_samsung_image_policy', name: 'Keep alt, drop srcset on images', type: 'image_policy',
+        scope: { level: 'customer', customer: 'samsung', page_type: null, locale: [] }, priority: 60,
+        safety: { destructive: false, requires_preview: false },
+        actions: [{ op: 'keep_attribute', selector: 'img', attribute: 'alt' }, { op: 'remove_attribute', selector: 'img', attribute: 'srcset' }] }),
+      mkRule({ rule_id: 'rule_lg_token_noise', name: 'Remove noise tokens', type: 'text_token_remove',
+        scope: { level: 'customer', customer: 'lg', page_type: null, locale: [] }, priority: 70,
+        actions: [{ op: 'remove_text_token', token: '™' }] }),
+      mkRule({ rule_id: 'rule_lg_role_banner', name: 'Drop banner role elements', type: 'role_policy',
+        scope: { level: 'customer', customer: 'lg', page_type: null, locale: [] }, priority: 75,
+        actions: [{ op: 'remove_element', selector: '[role="banner"]' }] }),
+    ];
+
+    const data = {
+      registry: {
+        schema_version: '1.0', default: 'coupang',
+        customers: [
+          { id: 'coupang', name: 'Coupang', host_patterns: ['coupang.com', '*.coupang.com'], page_types: ['product', 'search'] },
+          { id: 'samsung', name: 'Samsung', host_patterns: ['samsung.com', '*.samsung.com'], page_types: ['product', 'landing'] },
+          { id: 'lg', name: 'LG Electronics', host_patterns: ['lge.co.kr', '*.lge.co.kr', 'lg.com'], page_types: ['product', 'article'] },
+        ],
+      },
+      rules: new Map(seedRules.map((r) => [`${r.rule_id}@${r.version}`, r])),
+      manifests: new Map(),
+      pageTypes: new Map(),
+    };
+
+    const scopeKey = (customer, pageType) => C.KV.manifestScope({ customer, pageType });
+    function seedManifest(customer, pageType, ids) {
+      data.manifests.set(scopeKey(customer, pageType), {
+        schema_version: '1.0', manifest_id: scopeKey(customer, pageType).replace(/\//g, ':'),
+        env: C.DEFAULT_ENV, channel: C.DEFAULT_CHANNEL,
+        scope: { tenant: 'default', customer: customer || null, page_type: pageType || null },
+        version: 1, rules: ids.map((id) => ({ rule_id: id, version: 1 })),
+      });
+    }
+    seedManifest(null, null, ['rule_global_attribute_filter', 'rule_global_dedup_blocks', 'rule_global_link_density_prune', 'rule_global_mode_default']);
+    seedManifest('coupang', null, ['rule_coupang_jsonld_product', 'rule_coupang_phrase_ad']);
+    seedManifest('coupang', 'product', ['rule_coupang_product_remove_header_gnb']);
+    seedManifest('samsung', null, ['rule_samsung_container_promo', 'rule_samsung_image_policy']);
+    seedManifest('lg', null, ['rule_lg_token_noise', 'rule_lg_role_banner']);
+
+    data.pageTypes.set('coupang', { schema_version: '1.0', customer: 'coupang', version: 1, enabled: true, fallback: 'unknown',
+      hot_path_rules: [
+        { page_type: 'product', priority: 100, url_patterns: ['*/vp/products/*', '*/products/*'], query_params: [] },
+        { page_type: 'search', priority: 90, url_patterns: ['*/np/search*'], query_params: ['q'] },
+      ] });
+    data.pageTypes.set('samsung', { schema_version: '1.0', customer: 'samsung', version: 1, enabled: true, fallback: 'unknown',
+      hot_path_rules: [
+        { page_type: 'product', priority: 100, url_patterns: ['*/p/*'], query_params: [] },
+        { page_type: 'landing', priority: 50, url_patterns: ['*/event/*', '*/offer/*'], query_params: [] },
+      ] });
+    data.pageTypes.set('lg', { schema_version: '1.0', customer: 'lg', version: 1, enabled: true, fallback: 'unknown',
+      hot_path_rules: [
+        { page_type: 'product', priority: 100, url_patterns: ['*/product/*'], query_params: [] },
+        { page_type: 'article', priority: 60, url_patterns: ['*/story/*', '*/blog/*'], query_params: [] },
+      ] });
+    data.pageTypes.set(C.GLOBAL_ID, { schema_version: '1.0', customer: null, version: 1, enabled: true, fallback: 'unknown',
+      hot_path_rules: [{ page_type: 'product', priority: 10, url_patterns: ['*/product/*', '*/products/*'], query_params: [] }] });
+
+    const clone = (v) => JSON.parse(JSON.stringify(v));
+    const delay = () => new Promise((r) => setTimeout(r, 120));
+
+    return {
+      isMock: true,
+      async login(username, password) {
+        await delay();
+        if (!username || !password) throw new ApiError('사용자명과 비밀번호를 입력하세요.', 400);
+        sessionStorage.setItem('geo-mock-auth', username);
+        return { username, roles: ['admin'] };
+      },
+      async logout() { sessionStorage.removeItem('geo-mock-auth'); },
+      async me() {
+        const u = sessionStorage.getItem('geo-mock-auth');
+        return u ? { username: u, roles: ['admin'] } : null;
+      },
+      async getDomains() {
+        await delay();
+        return { ok: true, found: true, default: data.registry.default,
+          domains: clone(data.registry.customers) };
+      },
+      async saveDomains(registry) {
+        await delay();
+        const reg = { schema_version: registry.schema_version || '1.0', default: registry.default,
+          customers: registry.customers || registry.domains };
+        const errors = C.validateRegistry(reg);
+        if (errors.length) throw new ApiError('검증 실패', 400, errors);
+        data.registry = clone(reg);
+        return { ok: true };
+      },
+      async getPageTypes(id) {
+        await delay();
+        if (data.pageTypes.has(id)) return { ok: true, found: true, config: clone(data.pageTypes.get(id)) };
+        return { ok: true, found: false, config: { schema_version: '1.0', customer: id === C.GLOBAL_ID ? null : id, version: 1, enabled: true, fallback: 'unknown', hot_path_rules: [] } };
+      },
+      async savePageTypes(id, cfg) {
+        await delay();
+        const errors = C.validatePageTypeConfig(cfg);
+        if (errors.length) throw new ApiError('검증 실패', 400, errors);
+        data.pageTypes.set(id, clone(cfg));
+        return { ok: true };
+      },
+      async listRules({ scope, domain, pageType }) {
+        await delay();
+        const key = scopeKey(scope === 'global' ? null : domain, pageType || null);
+        const manifest = data.manifests.get(key);
+        if (!manifest) return { ok: true, manifest: null, rules: [] };
+        const rules = manifest.rules.map((p) => {
+          const r = data.rules.get(`${p.rule_id}@${p.version}`);
+          return { rule_id: p.rule_id, version: p.version, found: !!r, rule: r ? clone(r) : null };
+        });
+        return { ok: true, manifest: clone(manifest), rules };
+      },
+      async saveRule(rule, { version, attach, domain, pageType }) {
+        await delay();
+        const errors = C.validateRule(rule);
+        if (errors.length) throw new ApiError('검증 실패', 400, errors);
+        rule = clone(rule);
+        rule.version = version;
+        data.rules.set(`${rule.rule_id}@${version}`, rule);
+        if (attach) {
+          const key = scopeKey(domain || null, pageType || null);
+          let manifest = data.manifests.get(key);
+          if (!manifest) {
+            manifest = { schema_version: '1.0', manifest_id: key.replace(/\//g, ':'),
+              env: C.DEFAULT_ENV, channel: C.DEFAULT_CHANNEL,
+              scope: { tenant: 'default', customer: domain || null, page_type: pageType || null },
+              version: 0, rules: [] };
+            data.manifests.set(key, manifest);
+          }
+          const idx = manifest.rules.findIndex((p) => p.rule_id === rule.rule_id);
+          if (idx >= 0) manifest.rules[idx] = { rule_id: rule.rule_id, version };
+          else manifest.rules.push({ rule_id: rule.rule_id, version });
+          manifest.version += 1;
+        }
+        return { ok: true, version };
+      },
+      async getConfig() {
+        await delay();
+        return { ok: true, stub: true, variables: {
+          geo_enable_gid: { value: 'true', description: 'GID(GEO ID) 부여 활성화' },
+          geo_request_profile: { value: 'default', description: '요청 프로파일 (default|strict|lenient)' },
+          geo_dedup_text_tags: { value: 'p,li,span', description: '중복 제거 대상 텍스트 태그' },
+        } };
+      },
+    };
+  }
+
+  const api = USE_MOCK ? createMockApi() : createRealApi();
+
+  // ---------------- 상태 ----------------
+  const state = {
+    user: null,
+    defaultDomain: null,
+    domains: [],            // [{id,name,host_patterns,page_types}]
+    selected: C.GLOBAL_ID,  // 현재 선택 (GLOBAL_ID 또는 도메인 id)
+    pageTypeCfg: null,
+    rulesData: null,        // {manifest, rules:[{rule_id,version,found,rule}]}
+    editingExisting: false,
+  };
+
+  function onSessionExpired() {
+    state.user = null;
+    showLogin('세션이 만료되었습니다. 다시 로그인하세요.');
+  }
+
+  const selectedDomain = () => state.domains.find((d) => d.id === state.selected) || null;
+  const isGlobal = () => state.selected === C.GLOBAL_ID;
+
+  function registryFromState() {
+    return {
+      schema_version: '1.0',
+      default: state.defaultDomain,
+      customers: JSON.parse(JSON.stringify(state.domains)),
+    };
+  }
+
+  // ---------------- 뷰 전환 ----------------
+  function showLogin(message) {
+    $('#app-view').hidden = true;
+    $('#login-view').hidden = false;
+    $('#mock-hint').hidden = !api.isMock;
+    $('#login-error').textContent = message || '';
+    $('#login-username').focus();
+  }
+
+  async function showApp() {
+    $('#login-view').hidden = true;
+    $('#app-view').hidden = false;
+    $('#whoami').textContent = `${state.user.username}${api.isMock ? ' (mock)' : ''}`;
+    await loadDomains(true);
+  }
+
+  // ---------------- 도메인 로딩 / 선택 ----------------
+  async function loadDomains(selectDefault = false) {
+    try {
+      const d = await api.getDomains();
+      state.domains = d.domains || [];
+      state.defaultDomain = d.default || null;
+      if (selectDefault) {
+        state.selected = state.defaultDomain && state.domains.some((x) => x.id === state.defaultDomain)
+          ? state.defaultDomain
+          : (state.domains[0] ? state.domains[0].id : C.GLOBAL_ID);
+      } else if (!isGlobal() && !state.domains.some((x) => x.id === state.selected)) {
+        state.selected = C.GLOBAL_ID;
+      }
+      renderDomainSelect();
+      await refreshSections();
+    } catch (e) { handleApiError(e, '도메인 목록을 불러오지 못했습니다'); }
+  }
+
+  function renderDomainSelect() {
+    const sel = $('#domain-select');
+    sel.replaceChildren(
+      el('option', { value: C.GLOBAL_ID }, '공통 (Global)'),
+      ...state.domains.map((d) => el('option', { value: d.id }, `${d.name} (${d.id})`)),
+    );
+    sel.value = state.selected;
+  }
+
+  async function refreshSections() {
+    renderDomainTab();
+    renderRulesToolbar();
+    await Promise.all([loadPageTypes(), loadRules()]);
+  }
+
+  // ---------------- 탭 ----------------
+  const TABS = ['domain', 'pagetypes', 'rules', 'config'];
+  let configLoaded = false;
+  function activateTab(name) {
+    for (const t of TABS) {
+      $(`#tabbtn-${t}`).setAttribute('aria-selected', String(t === name));
+      $(`#tab-${t}`).hidden = t !== name;
+    }
+    if (name === 'config' && !configLoaded) loadConfigStub();
+  }
+
+  // ---------------- 탭A: 도메인 정보 ----------------
+  function renderDomainTab() {
+    $('#domain-global-panel').hidden = !isGlobal();
+    $('#domain-edit-panel').hidden = isGlobal();
+    if (isGlobal()) {
+      const dsel = $('#default-domain-select');
+      dsel.replaceChildren(...state.domains.map((d) => el('option', { value: d.id }, `${d.name} (${d.id})`)));
+      if (state.defaultDomain) dsel.value = state.defaultDomain;
+      $('#domain-table-body').replaceChildren(...state.domains.map((d) =>
+        el('tr', {},
+          el('td', {}, el('code', {}, d.id)),
+          el('td', {}, d.name),
+          el('td', {}, (d.host_patterns || []).join(', ')),
+          el('td', {}, (d.page_types || []).join(', ')),
+          el('td', {}, el('button', { onclick: () => { $('#domain-select').value = d.id; $('#domain-select').dispatchEvent(new Event('change')); } }, '편집')),
+        )));
+      showErrors('#add-domain-errors', []);
+    } else {
+      const d = selectedDomain();
+      if (!d) return;
+      $('#domain-edit-title').textContent = `도메인 편집 — ${d.name}`;
+      $('#dom-id').value = d.id;
+      $('#dom-name').value = d.name;
+      $('#dom-patterns').value = (d.host_patterns || []).join(', ');
+      $('#dom-pagetypes').value = (d.page_types || []).join(', ');
+      showErrors('#domain-errors', []);
+    }
+  }
+
+  async function saveRegistry(reg, errorSel, successMsg) {
+    const errors = C.validateRegistry(reg);
+    if (errors.length) { showErrors(errorSel, errors); return false; }
+    try {
+      await api.saveDomains(reg);
+      toast(successMsg);
+      return true;
+    } catch (e) {
+      showErrors(errorSel, e.errors && e.errors.length ? e.errors : [e.message]);
+      return false;
+    }
+  }
+
+  async function onDomainSave() {
+    const reg = registryFromState();
+    const c = reg.customers.find((x) => x.id === state.selected);
+    if (!c) return;
+    c.name = $('#dom-name').value.trim();
+    c.host_patterns = parseCsv($('#dom-patterns').value.toLowerCase());
+    c.page_types = parseCsv($('#dom-pagetypes').value.toLowerCase());
+    if (await saveRegistry(reg, '#domain-errors', '도메인 정보를 저장했습니다.')) await loadDomains();
+  }
+
+  async function onDomainDelete() {
+    const d = selectedDomain();
+    if (!d) return;
+    if (!confirm(`도메인 "${d.name}" (${d.id})을(를) 레지스트리에서 삭제할까요?\n(룰/페이지타입 KV 데이터는 남습니다)`)) return;
+    const reg = registryFromState();
+    reg.customers = reg.customers.filter((x) => x.id !== d.id);
+    if (reg.default === d.id) reg.default = reg.customers[0] ? reg.customers[0].id : null;
+    if (await saveRegistry(reg, '#domain-errors', '도메인을 삭제했습니다.')) {
+      state.selected = C.GLOBAL_ID;
+      await loadDomains();
+    }
+  }
+
+  async function onDomainAdd() {
+    const reg = registryFromState();
+    reg.customers.push({
+      id: $('#add-id').value.trim().toLowerCase(),
+      name: $('#add-name').value.trim(),
+      host_patterns: parseCsv($('#add-patterns').value.toLowerCase()),
+      page_types: parseCsv($('#add-pagetypes').value.toLowerCase()),
+    });
+    if (!reg.default) reg.default = reg.customers[0].id;
+    if (await saveRegistry(reg, '#add-domain-errors', '도메인을 추가했습니다.')) {
+      for (const id of ['#add-id', '#add-name', '#add-patterns', '#add-pagetypes']) $(id).value = '';
+      await loadDomains();
+    }
+  }
+
+  async function onDefaultDomainSave() {
+    const reg = registryFromState();
+    reg.default = $('#default-domain-select').value;
+    if (await saveRegistry(reg, '#add-domain-errors', '기본 도메인을 저장했습니다.')) await loadDomains();
+  }
+
+  // ---------------- 탭B: 페이지 타입 ----------------
+  function hprRow(data = {}) {
+    const ptSel = el('select', { 'aria-label': 'page_type', title: '판정 결과 페이지 타입' },
+      ...C.PAGE_TYPES.map((pt) => el('option', { value: pt }, pt)));
+    ptSel.value = data.page_type || 'product';
+    const prio = el('input', { type: 'number', step: '1', 'aria-label': 'priority', title: '높을수록 먼저 평가', value: data.priority ?? 100, style: 'width:90px' });
+    const urls = el('input', { type: 'text', 'aria-label': 'url_patterns (콤마 구분)', title: 'URL 경로 패턴 (콤마 구분, * 와일드카드)', placeholder: '*/products/*, */vp/*', value: (data.url_patterns || []).join(', ') });
+    const qps = el('input', { type: 'text', 'aria-label': 'query_params (콤마 구분)', title: '판정에 참여하는 쿼리 파라미터 (콤마 구분)', placeholder: 'q', value: (data.query_params || []).join(', '), style: 'width:120px' });
+    const row = el('div', { class: 'row hpr-row', style: 'margin-bottom:8px;flex-wrap:nowrap' },
+      ptSel, prio, urls, qps,
+      el('button', { class: 'danger', 'aria-label': '이 규칙 삭제', onclick: () => row.remove() }, '삭제'));
+    row._collect = () => ({
+      page_type: ptSel.value,
+      priority: parseInt(prio.value, 10),
+      url_patterns: parseCsv(urls.value),
+      query_params: parseCsv(qps.value),
+    });
+    return row;
+  }
+
+  async function loadPageTypes() {
+    const scopeName = isGlobal() ? '공통 (Global)' : `${selectedDomain()?.name || state.selected}`;
+    $('#pt-title').textContent = `페이지 타입 설정 — ${scopeName}`;
+    try {
+      const d = await api.getPageTypes(state.selected);
+      state.pageTypeCfg = d.config;
+      const badge = $('#pt-found-badge');
+      badge.textContent = d.found ? 'KV에 존재' : '신규 (KV에 없음)';
+      badge.className = d.found ? 'badge on' : 'badge off';
+      const fb = $('#pt-fallback');
+      fb.replaceChildren(...C.PAGE_TYPES.map((pt) => el('option', { value: pt }, pt)));
+      fb.value = d.config.fallback || 'unknown';
+      $('#pt-enabled').checked = d.config.enabled !== false;
+      $('#pt-version').value = d.config.version || 1;
+      $('#hpr-rows').replaceChildren(...(d.config.hot_path_rules || []).map((r) => hprRow(r)));
+      showErrors('#pt-errors', []);
+    } catch (e) { handleApiError(e, '페이지 타입 설정을 불러오지 못했습니다'); }
+  }
+
+  async function onPageTypesSave() {
+    const cfg = {
+      schema_version: '1.0',
+      customer: isGlobal() ? null : state.selected,
+      version: parseInt($('#pt-version').value, 10) || 1,
+      enabled: $('#pt-enabled').checked,
+      fallback: $('#pt-fallback').value,
+      hot_path_rules: [...$('#hpr-rows').querySelectorAll('.hpr-row')].map((r) => r._collect()),
+    };
+    const errors = C.validatePageTypeConfig(cfg);
+    if (errors.length) return showErrors('#pt-errors', errors);
+    try {
+      await api.savePageTypes(state.selected, cfg);
+      toast('페이지 타입 설정을 저장했습니다.');
+      await loadPageTypes();
+    } catch (e) { showErrors('#pt-errors', e.errors && e.errors.length ? e.errors : [e.message]); }
+  }
+
+  // ---------------- 탭C: 최적화 룰 ----------------
+  function renderRulesToolbar() {
+    const d = selectedDomain();
+    const pts = isGlobal() ? C.PAGE_TYPES : (d?.page_types?.length ? d.page_types : C.PAGE_TYPES);
+    const filter = $('#rules-pt-filter');
+    const prev = filter.value;
+    filter.replaceChildren(
+      el('option', { value: '' }, '(도메인 공통)'),
+      ...pts.map((pt) => el('option', { value: pt }, pt)));
+    filter.value = pts.includes(prev) ? prev : '';
+    $('#rules-title').textContent = `최적화 룰 — ${isGlobal() ? '공통 (Global)' : d?.name || state.selected}`;
+  }
+
+  function rulesScopeParams() {
+    return {
+      scope: isGlobal() ? 'global' : undefined,
+      domain: isGlobal() ? undefined : state.selected,
+      pageType: $('#rules-pt-filter').value || undefined,
+    };
+  }
+
+  async function loadRules() {
+    try {
+      state.rulesData = await api.listRules(rulesScopeParams());
+      renderRulesList();
+    } catch (e) { handleApiError(e, '룰 목록을 불러오지 못했습니다'); }
+  }
+
+  function renderRulesList() {
+    const wrap = $('#rules-list');
+    wrap.replaceChildren();
+    const rd = state.rulesData;
+    const pt = $('#rules-pt-filter').value;
+    $('#rules-scope-desc').textContent =
+      `매니페스트 스코프: ${isGlobal() ? 'global' : `customer/${state.selected}`}${pt ? ` + page_type/${pt}` : ''}` +
+      (rd?.manifest ? ` (manifest v${rd.manifest.version}, 룰 ${rd.rules.length}개)` : ' — 매니페스트 없음');
+    if (!rd || !rd.rules.length) {
+      wrap.append(el('p', { style: 'color:var(--muted)' }, '이 스코프에 등록된 룰이 없습니다. "+ 새 룰"로 추가하세요.'));
+      return;
+    }
+    const found = rd.rules.filter((e) => e.found).map((e) => e.rule);
+    const missing = rd.rules.filter((e) => !e.found);
+    const used = new Set();
+    for (const cat of C.RULE_CATEGORIES) {
+      const rs = found.filter((r) => cat.types.includes(r.type));
+      if (!rs.length) continue;
+      rs.forEach((r) => used.add(r.rule_id));
+      wrap.append(categorySection(cat.label, cat.description, rs));
+    }
+    const others = found.filter((r) => !used.has(r.rule_id));
+    if (others.length) wrap.append(categorySection('기타', 'RuleType이 카테고리에 매핑되지 않은 룰', others));
+    if (missing.length) {
+      wrap.append(el('p', { class: 'errors', style: 'list-style:none' },
+        `매니페스트에 있으나 KV에서 찾지 못한 룰: ${missing.map((m) => `${m.rule_id}@v${m.version}`).join(', ')}`));
+    }
+  }
+
+  function categorySection(label, description, rules) {
+    return el('div', {},
+      el('div', { class: 'cat-header' }, el('h3', {}, label), el('p', {}, description)),
+      el('table', {},
+        el('thead', {}, el('tr', {},
+          el('th', {}, '이름'), el('th', {}, 'rule_id'), el('th', {}, 'type'),
+          el('th', {}, 'priority'), el('th', {}, 'status'), el('th', {}, 'enabled'), el('th', {}, ''))),
+        el('tbody', {}, rules.sort((a, b) => b.priority - a.priority).map((r) =>
+          el('tr', {},
+            el('td', {}, r.name),
+            el('td', {}, el('code', {}, r.rule_id)),
+            el('td', {}, r.type),
+            el('td', {}, String(r.priority)),
+            el('td', {}, el('span', { class: `badge status-${r.status}` }, r.status)),
+            el('td', {}, el('span', { class: r.enabled ? 'badge on' : 'badge off' }, r.enabled ? 'on' : 'off')),
+            el('td', {}, el('button', { onclick: () => openRuleEditor(r) }, '편집')))))));
+  }
+
+  function fillSelect(sel, values, { empty } = {}) {
+    sel.replaceChildren(
+      ...(empty !== undefined ? [el('option', { value: '' }, empty)] : []),
+      ...values.map((v) => el('option', { value: v }, v)));
+  }
+
+  function openRuleEditor(rule) {
+    state.editingExisting = !!rule;
+    $('#rule-editor').hidden = false;
+    $('#rule-editor-title').textContent = rule ? `룰 편집 — ${rule.rule_id}` : '새 룰';
+    fillSelect($('#re-type'), C.RULE_TYPES);
+    fillSelect($('#re-scope-level'), C.SCOPE_LEVELS);
+    fillSelect($('#re-scope-pt'), C.PAGE_TYPES, { empty: '(없음)' });
+    fillSelect($('#re-status'), C.RULE_STATUSES);
+
+    const pt = $('#rules-pt-filter').value || null;
+    const dflt = {
+      rule_id: '', name: '', type: 'selector_remove', execution_class: 'streaming',
+      scope: {
+        level: isGlobal() ? (pt ? 'page_type' : 'global') : (pt ? 'customer_page_type' : 'customer'),
+        customer: isGlobal() ? null : state.selected, page_type: pt, locale: [],
+      },
+      priority: 100, enabled: true, version: 1, status: 'draft', conditions: {}, actions: [],
+      safety: { destructive: true, requires_preview: false },
+      metadata: { source: { type: null, reference: null }, citations: [], tags: [], owner: null, risk_level: null },
+    };
+    const r = rule || dflt;
+    $('#re-rule-id').value = r.rule_id;
+    $('#re-rule-id').disabled = !!rule;
+    $('#re-name').value = r.name;
+    $('#re-type').value = r.type;
+    $('#re-exec').value = r.execution_class || 'streaming';
+    $('#re-scope-level').value = r.scope?.level || 'global';
+    $('#re-scope-customer').value = r.scope?.customer || '';
+    $('#re-scope-pt').value = r.scope?.page_type || '';
+    $('#re-scope-locale').value = (r.scope?.locale || []).join(', ');
+    $('#re-priority').value = r.priority;
+    $('#re-version').value = r.version || 1;
+    $('#re-status').value = r.status || 'draft';
+    $('#re-enabled').checked = r.enabled !== false;
+    $('#re-conditions').value = JSON.stringify(r.conditions || {}, null, 2);
+    $('#re-actions').value = JSON.stringify(r.actions || [], null, 2);
+    $('#re-destructive').checked = !!r.safety?.destructive;
+    $('#re-preview').checked = !!r.safety?.requires_preview;
+    $('#re-src-type').value = r.metadata?.source?.type || '';
+    $('#re-src-ref').value = r.metadata?.source?.reference || '';
+    $('#re-citations').value = (r.metadata?.citations || []).join(', ');
+    $('#re-tags').value = (r.metadata?.tags || []).join(', ');
+    $('#re-owner').value = r.metadata?.owner || '';
+    $('#re-risk').value = r.metadata?.risk_level || '';
+    $('#re-attach').checked = true;
+    showErrors('#re-errors', []);
+    $('#rule-editor').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $(rule ? '#re-name' : '#re-rule-id').focus();
+  }
+
+  function buildRuleFromForm() {
+    const errors = [];
+    const parseJson = (sel, label, dflt) => {
+      const t = $(sel).value.trim();
+      if (!t) return dflt;
+      try { return JSON.parse(t); } catch (e) { errors.push(`${label} JSON 파싱 실패: ${e.message}`); return dflt; }
+    };
+    const priority = parseInt($('#re-priority').value, 10);
+    const rule = {
+      schema_version: '1.0',
+      rule_id: $('#re-rule-id').value.trim(),
+      name: $('#re-name').value.trim(),
+      type: $('#re-type').value,
+      execution_class: $('#re-exec').value,
+      scope: {
+        level: $('#re-scope-level').value,
+        customer: $('#re-scope-customer').value.trim() || null,
+        page_type: $('#re-scope-pt').value || null,
+        locale: parseCsv($('#re-scope-locale').value),
+      },
+      priority: Number.isNaN(priority) ? undefined : priority,
+      enabled: $('#re-enabled').checked,
+      version: parseInt($('#re-version').value, 10) || 1,
+      status: $('#re-status').value,
+      conditions: parseJson('#re-conditions', 'conditions', {}),
+      actions: parseJson('#re-actions', 'actions', []),
+      safety: { destructive: $('#re-destructive').checked, requires_preview: $('#re-preview').checked },
+      metadata: {
+        source: { type: $('#re-src-type').value.trim() || null, reference: $('#re-src-ref').value.trim() || null },
+        citations: parseCsv($('#re-citations').value),
+        tags: parseCsv($('#re-tags').value),
+        owner: $('#re-owner').value.trim() || null,
+        risk_level: $('#re-risk').value || null,
+      },
+    };
+    return { rule, errors };
+  }
+
+  let pendingRule = null;
+  function onRulePreview() {
+    const { rule, errors } = buildRuleFromForm();
+    const all = errors.concat(C.validateRule(rule));
+    showErrors('#re-errors', all);
+    if (all.length) return;
+    pendingRule = rule;
+    $('#modal-pre').textContent = JSON.stringify(rule, null, 2);
+    $('#modal').hidden = false;
+    $('#modal-save').focus();
+  }
+
+  async function onRuleConfirmSave() {
+    if (!pendingRule) return;
+    const btn = $('#modal-save');
+    btn.disabled = true;
+    try {
+      await api.saveRule(pendingRule, {
+        version: pendingRule.version,
+        attach: $('#re-attach').checked,
+        domain: isGlobal() ? null : state.selected,
+        pageType: $('#rules-pt-filter').value || null,
+      });
+      toast(`룰 "${pendingRule.rule_id}" v${pendingRule.version} 저장 완료`);
+      closeModal();
+      $('#rule-editor').hidden = true;
+      await loadRules();
+    } catch (e) {
+      closeModal();
+      showErrors('#re-errors', e.errors && e.errors.length ? e.errors : [e.message]);
+    } finally { btn.disabled = false; }
+  }
+
+  function closeModal() { $('#modal').hidden = true; pendingRule = null; }
+
+  // ---------------- 환경 설정(spin.toml) 스텁 ----------------
+  async function loadConfigStub() {
+    configLoaded = true;
+    try {
+      const d = await api.getConfig();
+      $('#config-fields').replaceChildren(...Object.entries(d.variables || {}).map(([k, v]) =>
+        el('div', { class: 'field' },
+          el('label', { for: `cfg-${k}` }, k),
+          el('input', { type: 'text', id: `cfg-${k}`, value: v.value, disabled: true, title: v.description }),
+          el('small', { class: 'help' }, v.description))));
+    } catch (e) { handleApiError(e, '환경 설정 스텁을 불러오지 못했습니다'); }
+  }
+
+  // ---------------- 공통 에러 처리 ----------------
+  function handleApiError(e, prefix) {
+    if (e.status === 401) return; // onSessionExpired가 처리
+    const detail = e.errors && e.errors.length ? ` — ${e.errors[0]}` : '';
+    toast(`${prefix}: ${e.message}${detail}`, 'error');
+  }
+
+  // ---------------- 이벤트 바인딩 ----------------
+  $('#login-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const btn = $('#login-btn');
+    btn.disabled = true;
+    $('#login-error').textContent = '';
+    try {
+      state.user = await api.login($('#login-username').value.trim(), $('#login-password').value);
+      await showApp();
+    } catch (e) {
+      $('#login-error').textContent = e.message;
+    } finally { btn.disabled = false; }
+  });
+
+  $('#logout-btn').addEventListener('click', async () => {
+    try { await api.logout(); } catch { /* 무시 */ }
+    state.user = null;
+    showLogin('로그아웃되었습니다.');
+  });
+
+  $('#domain-select').addEventListener('change', async (ev) => {
+    state.selected = ev.target.value;
+    $('#rule-editor').hidden = true;
+    await refreshSections();
+  });
+
+  for (const t of TABS) $(`#tabbtn-${t}`).addEventListener('click', () => activateTab(t));
+
+  $('#domain-save-btn').addEventListener('click', onDomainSave);
+  $('#domain-delete-btn').addEventListener('click', onDomainDelete);
+  $('#add-domain-btn').addEventListener('click', onDomainAdd);
+  $('#default-domain-save').addEventListener('click', onDefaultDomainSave);
+  $('#hpr-add-btn').addEventListener('click', () => $('#hpr-rows').append(hprRow()));
+  $('#pt-save-btn').addEventListener('click', onPageTypesSave);
+  $('#rules-refresh-btn').addEventListener('click', loadRules);
+  $('#rules-pt-filter').addEventListener('change', loadRules);
+  $('#rule-new-btn').addEventListener('click', () => openRuleEditor(null));
+  $('#re-preview-btn').addEventListener('click', onRulePreview);
+  $('#re-cancel-btn').addEventListener('click', () => { $('#rule-editor').hidden = true; });
+  $('#modal-save').addEventListener('click', onRuleConfirmSave);
+  $('#modal-cancel').addEventListener('click', closeModal);
+  $('#modal').addEventListener('click', (ev) => { if (ev.target === $('#modal')) closeModal(); });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !$('#modal').hidden) closeModal(); });
+
+  // ---------------- 초기화 ----------------
+  (async () => {
+    try {
+      const user = await api.me();
+      if (user) { state.user = user; await showApp(); }
+      else showLogin();
+    } catch (e) {
+      showLogin(api.isMock ? '' : `BFF 연결 실패: ${e.message}`);
+    }
+  })();
+})();
+</script>
+</body>
+</html>
