@@ -562,7 +562,13 @@ const GeoContract = (() => {
     return null;
   }
 
-  function validateRegistry(reg) {
+  // opts.onlyDomain: 레지스트리는 통째로 저장되지만 "내용(name/host_patterns/page_types)" 검증은
+  //   - undefined → 모든 도메인 (기본, 하위호환)
+  //   - '<id>'    → 해당 도메인만 (특정 도메인 편집/추가 저장 시)
+  //   - null      → 어느 도메인도 내용 검증 안 함 (삭제/기본값 변경 저장 시)
+  // 구조 검증(id 형식/예약어/중복, customers 개수, default 참조)은 항상 전체에 적용된다(KV 무결성).
+  function validateRegistry(reg, opts = {}) {
+    const onlyId = opts.onlyDomain;
     const errors = [];
     if (!reg || typeof reg !== 'object') return ['레지스트리가 객체가 아닙니다.'];
     const customers = reg.customers;
@@ -580,6 +586,9 @@ const GeoContract = (() => {
       else if (seen.has(id))
         errors.push(`도메인 id "${id}"가 중복되었습니다.`);
       seen.add(id);
+      // 내용 검증은 대상 도메인에 대해서만 (onlyId 미지정 시 전체)
+      const checkContent = onlyId === undefined || (onlyId !== null && c.id === onlyId);
+      if (!checkContent) continue;
       if (typeof c.name !== 'string' || c.name.trim().length === 0)
         errors.push(`도메인 "${id}"의 name이 비어 있습니다.`);
       const hp = c.host_patterns;
@@ -812,7 +821,10 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
         }
       },
       getDomains: () => request(C.API.DOMAINS),
-      saveDomains: (registry) => request(C.API.DOMAINS, { method: 'POST', body: registry }),
+      saveDomains: (registry, onlyDomain) => {
+        const only = onlyDomain === undefined ? '' : `?only=${encodeURIComponent(onlyDomain === null ? 'none' : onlyDomain)}`;
+        return request(`${C.API.DOMAINS}${only}`, { method: 'POST', body: registry });
+      },
       getPageTypes: (id) => request(C.API.DOMAIN_PAGE_TYPES(id)),
       savePageTypes: (id, cfg) => request(C.API.DOMAIN_PAGE_TYPES(id), { method: 'POST', body: cfg }),
       listRules({ scope, domain, pageType }) {
@@ -955,11 +967,11 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
         return { ok: true, found: true, default: data.registry.default,
           domains: clone(data.registry.customers) };
       },
-      async saveDomains(registry) {
+      async saveDomains(registry, onlyDomain) {
         await delay();
         const reg = { schema_version: registry.schema_version || '1.0', default: registry.default,
           customers: registry.customers || registry.domains };
-        const errors = C.validateRegistry(reg);
+        const errors = C.validateRegistry(reg, { onlyDomain });
         if (errors.length) throw new ApiError('검증 실패', 400, errors);
         data.registry = clone(reg);
         return { ok: true };
@@ -1148,11 +1160,13 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
     }
   }
 
-  async function saveRegistry(reg, errorSel, successMsg) {
-    const errors = C.validateRegistry(reg);
+  // onlyDomain: 내용 검증 대상. 문자열 id=해당 도메인만 / null=내용 검증 생략 / undefined=전체.
+  // 레지스트리는 통째로 저장되지만, 편집 중이 아닌 다른(미완성) 도메인 때문에 저장이 막히지 않도록 한다.
+  async function saveRegistry(reg, errorSel, successMsg, onlyDomain) {
+    const errors = C.validateRegistry(reg, { onlyDomain });
     if (errors.length) { showErrors(errorSel, errors); return false; }
     try {
-      await api.saveDomains(reg);
+      await api.saveDomains(reg, onlyDomain);
       toast(successMsg);
       return true;
     } catch (e) {
@@ -1168,7 +1182,8 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
     c.name = $('#dom-name').value.trim();
     c.host_patterns = parseCsv($('#dom-patterns').value.toLowerCase());
     c.page_types = parseCsv($('#dom-pagetypes').value.toLowerCase());
-    if (await saveRegistry(reg, '#domain-errors', '도메인 정보를 저장했습니다.')) await loadDomains();
+    // 선택된 도메인만 검증
+    if (await saveRegistry(reg, '#domain-errors', '도메인 정보를 저장했습니다.', state.selected)) await loadDomains();
   }
 
   async function onDomainDelete() {
@@ -1178,7 +1193,8 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
     const reg = registryFromState();
     reg.customers = reg.customers.filter((x) => x.id !== d.id);
     if (reg.default === d.id) reg.default = reg.customers[0] ? reg.customers[0].id : null;
-    if (await saveRegistry(reg, '#domain-errors', '도메인을 삭제했습니다.')) {
+    // 삭제: 내용 검증 없이 구조만
+    if (await saveRegistry(reg, '#domain-errors', '도메인을 삭제했습니다.', null)) {
       state.selected = C.GLOBAL_ID;
       await loadDomains();
     }
@@ -1186,14 +1202,16 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
 
   async function onDomainAdd() {
     const reg = registryFromState();
+    const newId = $('#add-id').value.trim().toLowerCase();
     reg.customers.push({
-      id: $('#add-id').value.trim().toLowerCase(),
+      id: newId,
       name: $('#add-name').value.trim(),
       host_patterns: parseCsv($('#add-patterns').value.toLowerCase()),
       page_types: parseCsv($('#add-pagetypes').value.toLowerCase()),
     });
     if (!reg.default) reg.default = reg.customers[0].id;
-    if (await saveRegistry(reg, '#add-domain-errors', '도메인을 추가했습니다.')) {
+    // 새로 추가하는 도메인만 검증
+    if (await saveRegistry(reg, '#add-domain-errors', '도메인을 추가했습니다.', newId)) {
       for (const id of ['#add-id', '#add-name', '#add-patterns', '#add-pagetypes']) $(id).value = '';
       await loadDomains();
     }
@@ -1202,7 +1220,8 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
   async function onDefaultDomainSave() {
     const reg = registryFromState();
     reg.default = $('#default-domain-select').value;
-    if (await saveRegistry(reg, '#add-domain-errors', '기본 도메인을 저장했습니다.')) await loadDomains();
+    // 기본값 변경: 내용 검증 없이 구조만
+    if (await saveRegistry(reg, '#add-domain-errors', '기본 도메인을 저장했습니다.', null)) await loadDomains();
   }
 
   // ---------------- 탭B: 페이지 타입 ----------------

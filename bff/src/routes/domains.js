@@ -33,7 +33,11 @@ function createDomainsRouter({ spin, config }) {
         default: body.default,
         customers: body.customers || body.domains, // web은 domains 명칭 사용 가능
       };
-      const errors = C.validateRegistry(registry);
+      // ?only=<id> 편집/추가 대상 도메인만 내용 검증, ?only=none 이면 내용 검증 생략(삭제/기본값 변경).
+      // 미지정 시 전체 검증(하위호환). 구조 검증(id/중복/개수/default)은 항상 수행.
+      const only = req.query.only;
+      const onlyDomain = only === undefined ? undefined : (only === 'none' ? null : only);
+      const errors = C.validateRegistry(registry, { onlyDomain });
       if (errors.length) return res.status(400).json({ ok: false, errors });
       const result = await spin.kvSet(C.KV.registry(config.env), registry);
       res.json({ ok: true, key: result.key, bytes: result.bytes });

@@ -125,7 +125,13 @@ const GeoContract = (() => {
     return null;
   }
 
-  function validateRegistry(reg) {
+  // opts.onlyDomain: 레지스트리는 통째로 저장되지만 "내용(name/host_patterns/page_types)" 검증은
+  //   - undefined → 모든 도메인 (기본, 하위호환)
+  //   - '<id>'    → 해당 도메인만 (특정 도메인 편집/추가 저장 시)
+  //   - null      → 어느 도메인도 내용 검증 안 함 (삭제/기본값 변경 저장 시)
+  // 구조 검증(id 형식/예약어/중복, customers 개수, default 참조)은 항상 전체에 적용된다(KV 무결성).
+  function validateRegistry(reg, opts = {}) {
+    const onlyId = opts.onlyDomain;
     const errors = [];
     if (!reg || typeof reg !== 'object') return ['레지스트리가 객체가 아닙니다.'];
     const customers = reg.customers;
@@ -143,6 +149,9 @@ const GeoContract = (() => {
       else if (seen.has(id))
         errors.push(`도메인 id "${id}"가 중복되었습니다.`);
       seen.add(id);
+      // 내용 검증은 대상 도메인에 대해서만 (onlyId 미지정 시 전체)
+      const checkContent = onlyId === undefined || (onlyId !== null && c.id === onlyId);
+      if (!checkContent) continue;
       if (typeof c.name !== 'string' || c.name.trim().length === 0)
         errors.push(`도메인 "${id}"의 name이 비어 있습니다.`);
       const hp = c.host_patterns;
