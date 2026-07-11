@@ -134,6 +134,9 @@
     <button id="logout-btn">로그아웃</button>
   </header>
 
+  <!-- page_type 자동완성 후보: KV에 저장된 값에서 동적으로 채움 (허용값 강제 아님) -->
+  <datalist id="pt-suggest"></datalist>
+
   <main class="container">
     <div class="tabs" role="tablist" aria-label="관리 섹션">
       <button role="tab" id="tabbtn-domain" aria-controls="tab-domain" aria-selected="true">도메인 정보</button>
@@ -235,7 +238,8 @@
           </div>
           <div class="field">
             <label for="pt-fallback">폴백(fallback)</label>
-            <select id="pt-fallback" title="어떤 규칙에도 매칭되지 않을 때 사용할 페이지 타입"></select>
+            <input type="text" id="pt-fallback" list="pt-suggest" placeholder="unknown" title="어떤 규칙에도 매칭되지 않을 때 사용할 페이지 타입 (자유 입력)">
+            <small class="help">허용값 제한 없음. KV에 저장된 값이 자동완성으로 제안됩니다.</small>
           </div>
           <div class="field">
             <label for="pt-version">버전(version)</label>
@@ -310,8 +314,8 @@
           </div>
           <div class="field">
             <label for="re-scope-pt">scope.page_type</label>
-            <select id="re-scope-pt" title="적용 대상 페이지 타입 (없으면 비움)"></select>
-            <small class="help">대상 페이지 타입.</small>
+            <input type="text" id="re-scope-pt" list="pt-suggest" placeholder="(없으면 비움)" title="적용 대상 페이지 타입 (자유 입력, 없으면 비움)">
+            <small class="help">대상 페이지 타입. 허용값 제한 없음.</small>
           </div>
           <div class="field">
             <label for="re-scope-locale">scope.locale (콤마 구분)</label>
@@ -494,7 +498,8 @@ const GeoContract = (() => {
     'inject_json_ld', 'prune_by_link_density',
   ];
 
-  const PAGE_TYPES = ['product', 'category', 'search', 'landing', 'article', 'policy', 'unknown'];
+  // page_type은 고정 허용값(allowlist)을 두지 않는다 — 자유 입력. 비어있지 않은 문자열이면 되고,
+  // "중복 정의"만 검증에서 막는다. UI 자동완성 후보는 KV에 저장된 값에서 동적으로 채운다.
 
   const SCOPE_LEVELS = ['global', 'customer', 'page_type', 'customer_page_type'];
 
@@ -590,8 +595,14 @@ const GeoContract = (() => {
       }
       if (c.page_types !== undefined) {
         if (!Array.isArray(c.page_types)) errors.push(`도메인 "${id}"의 page_types가 배열이 아닙니다.`);
-        else for (const pt of c.page_types)
-          if (!PAGE_TYPES.includes(pt)) errors.push(`도메인 "${id}"의 page_type "${pt}"는 허용값이 아닙니다.`);
+        else {
+          const seenPt = new Set();
+          for (const pt of c.page_types) {
+            if (typeof pt !== 'string' || pt.trim().length === 0) errors.push(`도메인 "${id}"의 page_type이 비어 있습니다.`);
+            else if (seenPt.has(pt)) errors.push(`도메인 "${id}"의 page_type "${pt}"가 중복되었습니다.`);
+            else seenPt.add(pt);
+          }
+        }
       }
     }
     if (customers.length > 0) {
@@ -648,8 +659,8 @@ const GeoContract = (() => {
       else {
         if (s.level !== undefined && !SCOPE_LEVELS.includes(s.level))
           errors.push(`scope.level("${s.level}")은 ${SCOPE_LEVELS.join('|')} 중 하나여야 합니다.`);
-        if (s.page_type != null && s.page_type !== '' && !PAGE_TYPES.includes(s.page_type))
-          errors.push(`scope.page_type("${s.page_type}")은 허용값이 아닙니다.`);
+        if (s.page_type != null && s.page_type !== '' && typeof s.page_type !== 'string')
+          errors.push('scope.page_type은 문자열이어야 합니다.');
         if (s.locale !== undefined && !Array.isArray(s.locale))
           errors.push('scope.locale은 배열이어야 합니다.');
       }
@@ -662,16 +673,21 @@ const GeoContract = (() => {
     if (!cfg || typeof cfg !== 'object') return ['페이지타입 설정이 객체가 아닙니다.'];
     if (cfg.enabled !== undefined && typeof cfg.enabled !== 'boolean')
       errors.push('enabled는 boolean이어야 합니다.');
-    if (cfg.fallback !== undefined && !PAGE_TYPES.includes(cfg.fallback))
-      errors.push(`fallback("${cfg.fallback}")은 허용된 page_type이 아닙니다.`);
+    if (cfg.fallback !== undefined && cfg.fallback !== null &&
+        (typeof cfg.fallback !== 'string' || cfg.fallback.trim().length === 0))
+      errors.push('fallback은 비어있지 않은 문자열이어야 합니다.');
     if (cfg.version !== undefined && (!Number.isInteger(cfg.version) || cfg.version < 1))
       errors.push('version은 1 이상의 정수여야 합니다.');
     const rules = cfg.hot_path_rules;
     if (!Array.isArray(rules)) return errors.concat(['hot_path_rules가 배열이 아닙니다.']);
+    const seenHpr = new Set();
     rules.forEach((r, i) => {
       if (!r || typeof r !== 'object') { errors.push(`hot_path_rules[${i}]가 객체가 아닙니다.`); return; }
-      if (!PAGE_TYPES.includes(r.page_type))
-        errors.push(`hot_path_rules[${i}].page_type("${r.page_type}")은 허용값이 아닙니다.`);
+      if (typeof r.page_type !== 'string' || r.page_type.trim().length === 0)
+        errors.push(`hot_path_rules[${i}].page_type이 비어 있습니다.`);
+      else if (seenHpr.has(r.page_type))
+        errors.push(`page_type "${r.page_type}"이 hot_path_rules에 중복 정의되었습니다.`);
+      else seenHpr.add(r.page_type);
       if (!Number.isInteger(r.priority))
         errors.push(`hot_path_rules[${i}].priority는 정수여야 합니다.`);
       if (!Array.isArray(r.url_patterns) || r.url_patterns.some((p) => typeof p !== 'string' || p.length === 0))
@@ -684,7 +700,7 @@ const GeoContract = (() => {
 
   return {
     API, KV, GLOBAL_ID, DEFAULT_ENV, DEFAULT_CHANNEL,
-    RULE_TYPES, RULE_STATUSES, ACTION_OPS, PAGE_TYPES, SCOPE_LEVELS, RULE_CATEGORIES, LIMITS,
+    RULE_TYPES, RULE_STATUSES, ACTION_OPS, SCOPE_LEVELS, RULE_CATEGORIES, LIMITS,
     DOMAIN_ID_RE, HOST_PATTERN_RE, RULE_ID_RE, byteLength,
     validateHostPattern, validateRegistry, validateRule, validatePageTypeConfig,
   };
@@ -1081,7 +1097,15 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
   async function refreshSections() {
     renderDomainTab();
     renderRulesToolbar();
+    refreshPageTypeSuggestions();
     await Promise.all([loadPageTypes(), loadRules()]);
+  }
+
+  // page_type 자유입력 자동완성 후보를 KV 저장 값에서 채운다 (허용값 강제 아님).
+  // 소스: 선택 도메인의 레지스트리 page_types + 추가로 넘어온 값(현재 설정의 hot_path_rules 등).
+  function refreshPageTypeSuggestions(extra = []) {
+    const set = new Set([...(selectedDomain()?.page_types || []), ...extra].filter(Boolean));
+    $('#pt-suggest').replaceChildren(...[...set].map((pt) => el('option', { value: pt })));
   }
 
   // ---------------- 탭 ----------------
@@ -1183,9 +1207,8 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
 
   // ---------------- 탭B: 페이지 타입 ----------------
   function hprRow(data = {}) {
-    const ptSel = el('select', { 'aria-label': 'page_type', title: '판정 결과 페이지 타입' },
-      ...C.PAGE_TYPES.map((pt) => el('option', { value: pt }, pt)));
-    ptSel.value = data.page_type || 'product';
+    const ptSel = el('input', { type: 'text', list: 'pt-suggest', 'aria-label': 'page_type', title: '판정 결과 페이지 타입 (자유 입력)', placeholder: 'product', style: 'width:150px' });
+    ptSel.value = data.page_type || '';
     const prio = el('input', { type: 'number', step: '1', 'aria-label': 'priority', title: '높을수록 먼저 평가', value: data.priority ?? 100, style: 'width:90px' });
     const urls = el('input', { type: 'text', 'aria-label': 'url_patterns (콤마 구분)', title: 'URL 경로 패턴 (콤마 구분, * 와일드카드)', placeholder: '*/products/*, */vp/*', value: (data.url_patterns || []).join(', ') });
     const qps = el('input', { type: 'text', 'aria-label': 'query_params (콤마 구분)', title: '판정에 참여하는 쿼리 파라미터 (콤마 구분)', placeholder: 'q', value: (data.query_params || []).join(', '), style: 'width:120px' });
@@ -1210,12 +1233,12 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
       const badge = $('#pt-found-badge');
       badge.textContent = d.found ? 'KV에 존재' : '신규 (KV에 없음)';
       badge.className = d.found ? 'badge on' : 'badge off';
-      const fb = $('#pt-fallback');
-      fb.replaceChildren(...C.PAGE_TYPES.map((pt) => el('option', { value: pt }, pt)));
-      fb.value = d.config.fallback || 'unknown';
+      $('#pt-fallback').value = d.config.fallback || '';
       $('#pt-enabled').checked = d.config.enabled !== false;
       $('#pt-version').value = d.config.version || 1;
       $('#hpr-rows').replaceChildren(...(d.config.hot_path_rules || []).map((r) => hprRow(r)));
+      // 이 설정에 정의된 page_type도 자동완성 후보에 반영
+      refreshPageTypeSuggestions((d.config.hot_path_rules || []).map((r) => r.page_type));
       showErrors('#pt-errors', []);
     } catch (e) { handleApiError(e, '페이지 타입 설정을 불러오지 못했습니다'); }
   }
@@ -1241,11 +1264,12 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
   // ---------------- 탭C: 최적화 룰 ----------------
   function renderRulesToolbar() {
     const d = selectedDomain();
-    const pts = isGlobal() ? C.PAGE_TYPES : (d?.page_types?.length ? d.page_types : C.PAGE_TYPES);
+    // KV에 저장된 page_type만 로딩 (하드코딩 허용값 폴백 없음). Global은 하위 page_type 없음.
+    const pts = isGlobal() ? [] : (d?.page_types || []);
     const filter = $('#rules-pt-filter');
     const prev = filter.value;
     filter.replaceChildren(
-      el('option', { value: '' }, '(도메인 공통)'),
+      el('option', { value: '' }, '(공통)'),
       ...pts.map((pt) => el('option', { value: pt }, pt)));
     filter.value = pts.includes(prev) ? prev : '';
     $('#rules-title').textContent = `최적화 룰 — ${isGlobal() ? '공통 (Global)' : d?.name || state.selected}`;
@@ -1325,8 +1349,8 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
     $('#rule-editor-title').textContent = rule ? `룰 편집 — ${rule.rule_id}` : '새 룰';
     fillSelect($('#re-type'), C.RULE_TYPES);
     fillSelect($('#re-scope-level'), C.SCOPE_LEVELS);
-    fillSelect($('#re-scope-pt'), C.PAGE_TYPES, { empty: '(없음)' });
     fillSelect($('#re-status'), C.RULE_STATUSES);
+    // #re-scope-pt는 자유 입력(text + datalist)이라 별도 옵션 채움 없음
 
     const pt = $('#rules-pt-filter').value || null;
     const dflt = {

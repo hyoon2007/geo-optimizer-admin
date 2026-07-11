@@ -61,7 +61,8 @@ const GeoContract = (() => {
     'inject_json_ld', 'prune_by_link_density',
   ];
 
-  const PAGE_TYPES = ['product', 'category', 'search', 'landing', 'article', 'policy', 'unknown'];
+  // page_type은 고정 허용값(allowlist)을 두지 않는다 — 자유 입력. 비어있지 않은 문자열이면 되고,
+  // "중복 정의"만 검증에서 막는다. UI 자동완성 후보는 KV에 저장된 값에서 동적으로 채운다.
 
   const SCOPE_LEVELS = ['global', 'customer', 'page_type', 'customer_page_type'];
 
@@ -157,8 +158,14 @@ const GeoContract = (() => {
       }
       if (c.page_types !== undefined) {
         if (!Array.isArray(c.page_types)) errors.push(`도메인 "${id}"의 page_types가 배열이 아닙니다.`);
-        else for (const pt of c.page_types)
-          if (!PAGE_TYPES.includes(pt)) errors.push(`도메인 "${id}"의 page_type "${pt}"는 허용값이 아닙니다.`);
+        else {
+          const seenPt = new Set();
+          for (const pt of c.page_types) {
+            if (typeof pt !== 'string' || pt.trim().length === 0) errors.push(`도메인 "${id}"의 page_type이 비어 있습니다.`);
+            else if (seenPt.has(pt)) errors.push(`도메인 "${id}"의 page_type "${pt}"가 중복되었습니다.`);
+            else seenPt.add(pt);
+          }
+        }
       }
     }
     if (customers.length > 0) {
@@ -215,8 +222,8 @@ const GeoContract = (() => {
       else {
         if (s.level !== undefined && !SCOPE_LEVELS.includes(s.level))
           errors.push(`scope.level("${s.level}")은 ${SCOPE_LEVELS.join('|')} 중 하나여야 합니다.`);
-        if (s.page_type != null && s.page_type !== '' && !PAGE_TYPES.includes(s.page_type))
-          errors.push(`scope.page_type("${s.page_type}")은 허용값이 아닙니다.`);
+        if (s.page_type != null && s.page_type !== '' && typeof s.page_type !== 'string')
+          errors.push('scope.page_type은 문자열이어야 합니다.');
         if (s.locale !== undefined && !Array.isArray(s.locale))
           errors.push('scope.locale은 배열이어야 합니다.');
       }
@@ -229,16 +236,21 @@ const GeoContract = (() => {
     if (!cfg || typeof cfg !== 'object') return ['페이지타입 설정이 객체가 아닙니다.'];
     if (cfg.enabled !== undefined && typeof cfg.enabled !== 'boolean')
       errors.push('enabled는 boolean이어야 합니다.');
-    if (cfg.fallback !== undefined && !PAGE_TYPES.includes(cfg.fallback))
-      errors.push(`fallback("${cfg.fallback}")은 허용된 page_type이 아닙니다.`);
+    if (cfg.fallback !== undefined && cfg.fallback !== null &&
+        (typeof cfg.fallback !== 'string' || cfg.fallback.trim().length === 0))
+      errors.push('fallback은 비어있지 않은 문자열이어야 합니다.');
     if (cfg.version !== undefined && (!Number.isInteger(cfg.version) || cfg.version < 1))
       errors.push('version은 1 이상의 정수여야 합니다.');
     const rules = cfg.hot_path_rules;
     if (!Array.isArray(rules)) return errors.concat(['hot_path_rules가 배열이 아닙니다.']);
+    const seenHpr = new Set();
     rules.forEach((r, i) => {
       if (!r || typeof r !== 'object') { errors.push(`hot_path_rules[${i}]가 객체가 아닙니다.`); return; }
-      if (!PAGE_TYPES.includes(r.page_type))
-        errors.push(`hot_path_rules[${i}].page_type("${r.page_type}")은 허용값이 아닙니다.`);
+      if (typeof r.page_type !== 'string' || r.page_type.trim().length === 0)
+        errors.push(`hot_path_rules[${i}].page_type이 비어 있습니다.`);
+      else if (seenHpr.has(r.page_type))
+        errors.push(`page_type "${r.page_type}"이 hot_path_rules에 중복 정의되었습니다.`);
+      else seenHpr.add(r.page_type);
       if (!Number.isInteger(r.priority))
         errors.push(`hot_path_rules[${i}].priority는 정수여야 합니다.`);
       if (!Array.isArray(r.url_patterns) || r.url_patterns.some((p) => typeof p !== 'string' || p.length === 0))
@@ -251,7 +263,7 @@ const GeoContract = (() => {
 
   return {
     API, KV, GLOBAL_ID, DEFAULT_ENV, DEFAULT_CHANNEL,
-    RULE_TYPES, RULE_STATUSES, ACTION_OPS, PAGE_TYPES, SCOPE_LEVELS, RULE_CATEGORIES, LIMITS,
+    RULE_TYPES, RULE_STATUSES, ACTION_OPS, SCOPE_LEVELS, RULE_CATEGORIES, LIMITS,
     DOMAIN_ID_RE, HOST_PATTERN_RE, RULE_ID_RE, byteLength,
     validateHostPattern, validateRegistry, validateRule, validatePageTypeConfig,
   };
