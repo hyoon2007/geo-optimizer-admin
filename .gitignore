@@ -11,3 +11,7 @@ bff/data/
 # logs / OS
 *.log
 .DS_Store
+
+# runtime
+logs/
+.bff.pid
