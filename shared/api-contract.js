@@ -223,6 +223,13 @@ const GeoContract = (() => {
           else if (byteLength(a.selector) > LIMITS.SELECTOR_MAX_BYTES)
             errors.push(`actions[${i}].selector는 최대 ${LIMITS.SELECTOR_MAX_BYTES}바이트입니다.`);
         }
+        if (a.selectors !== undefined) {
+          if (!Array.isArray(a.selectors)) errors.push(`actions[${i}].selectors가 배열이 아닙니다.`);
+          else a.selectors.forEach((s, j) => {
+            if (typeof s !== 'string' || s.trim().length === 0) errors.push(`actions[${i}].selectors[${j}]가 비어있지 않은 문자열이어야 합니다.`);
+            else if (byteLength(s) > LIMITS.SELECTOR_MAX_BYTES) errors.push(`actions[${i}].selectors[${j}]는 최대 ${LIMITS.SELECTOR_MAX_BYTES}바이트입니다.`);
+          });
+        }
       });
     }
     if (rule.scope !== undefined) {

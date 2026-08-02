@@ -681,6 +681,13 @@ const GeoContract = (() => {
           else if (byteLength(a.selector) > LIMITS.SELECTOR_MAX_BYTES)
             errors.push(`actions[${i}].selector는 최대 ${LIMITS.SELECTOR_MAX_BYTES}바이트입니다.`);
         }
+        if (a.selectors !== undefined) {
+          if (!Array.isArray(a.selectors)) errors.push(`actions[${i}].selectors가 배열이 아닙니다.`);
+          else a.selectors.forEach((s, j) => {
+            if (typeof s !== 'string' || s.trim().length === 0) errors.push(`actions[${i}].selectors[${j}]가 비어있지 않은 문자열이어야 합니다.`);
+            else if (byteLength(s) > LIMITS.SELECTOR_MAX_BYTES) errors.push(`actions[${i}].selectors[${j}]는 최대 ${LIMITS.SELECTOR_MAX_BYTES}바이트입니다.`);
+          });
+        }
       });
     }
     if (rule.scope !== undefined) {
@@ -1384,16 +1391,17 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
   }
 
   // ============ 구조화 편집기: actions(op별 동적 폼) / conditions(키-값) ============
-  // op별 표시 필드. selector/attribute/token/phrase/to는 최상위, threshold는 params.threshold, params는 params 객체 전체.
+  // op별 표시 필드. 'sel'=선택자(단수 selector 또는 복수 selectors), threshold는 params.threshold,
+  // params는 params 객체 전체. execution_class는 모든 op 공통(선택)으로 자동 표시된다.
   const ACTION_FIELDS = {
-    remove_element: ['selector'], flatten_element: ['selector'], protect_element: ['selector'],
-    remove_attribute: ['selector', 'attribute'], keep_attribute: ['selector', 'attribute'],
+    remove_element: ['sel'], flatten_element: ['sel'], protect_element: ['sel'],
+    remove_attribute: ['sel', 'attribute'], keep_attribute: ['sel', 'attribute'],
     remove_text_token: ['token'], remove_text_phrase: ['phrase'],
-    promote_tag: ['selector', 'to'], inject_json_ld: ['selector', 'params'],
-    prune_by_link_density: ['selector', 'threshold'],
+    promote_tag: ['sel', 'to'], inject_json_ld: ['sel', 'params'],
+    prune_by_link_density: ['sel', 'threshold'],
   };
   const FIELD_META = {
-    selector: { label: 'selector', ph: '#header, .banner' },
+    sel: { label: 'selectors (한 줄에 하나)', ph: "a[href^='javascript:']\nbutton[href='#']", multi: true },
     attribute: { label: 'attribute', ph: 'style' },
     token: { label: 'token', ph: '™' },
     phrase: { label: 'phrase', ph: '광고 상품입니다' },
@@ -1401,6 +1409,9 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
     threshold: { label: 'threshold (0~1)', ph: '0.8', num: true },
     params: { label: 'params (JSON)', ph: '{ "@type": "Product" }', json: true },
   };
+  // 선택자 읽기: 복수 selectors 우선, 없으면 단수 selector를 1개짜리로.
+  const selList = (a) => Array.isArray(a.selectors) ? a.selectors
+    : (typeof a.selector === 'string' ? [a.selector] : []);
   let actionsMode = 'form';
   let conditionsMode = 'form';
 
@@ -1413,8 +1424,12 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
   // 스펙 필드만으로 재구성한 action이 원본과 동일해야 폼으로 무손실 표현 가능
   function actionFromSpec(a) {
     const out = { op: a.op };
+    if (a.execution_class !== undefined) out.execution_class = a.execution_class; // 액션별 실행 클래스(공통 필드)
     for (const f of ACTION_FIELDS[a.op] || []) {
-      if (f === 'threshold') { const t = a.params ? a.params.threshold : undefined; if (t !== undefined) out.params = { threshold: t }; }
+      if (f === 'sel') { // 원본의 selector/selectors 형태를 그대로 보존
+        if (Array.isArray(a.selectors)) out.selectors = a.selectors;
+        else if (a.selector !== undefined) out.selector = a.selector;
+      } else if (f === 'threshold') { const t = a.params ? a.params.threshold : undefined; if (t !== undefined) out.params = { threshold: t }; }
       else if (f === 'params') { if (a.params !== undefined) out.params = a.params; }
       else if (a[f] !== undefined) out[f] = a[f];
     }
@@ -1436,29 +1451,50 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
       el('div', { class: 'op-col' }, opSel), fields,
       el('button', { type: 'button', class: 'danger del', 'aria-label': '액션 삭제', onclick: () => row.remove() }, '✕'));
     row._inputs = {};
+    // 원본이 단수 selector였는지 복수 selectors였는지 기억 → 저장 시 형태 보존 (신규는 복수 기본)
+    row._selKeyPref = Array.isArray(action.selectors) ? 'selectors'
+      : (typeof action.selector === 'string' ? 'selector' : 'selectors');
     const render = () => {
       fields.replaceChildren();
       row._inputs = {};
       for (const f of ACTION_FIELDS[opSel.value] || []) {
         const meta = FIELD_META[f];
         let init = '';
-        if (f === 'threshold') init = action.params && action.params.threshold != null ? String(action.params.threshold) : '';
+        if (f === 'sel') init = selList(action).join('\n');
+        else if (f === 'threshold') init = action.params && action.params.threshold != null ? String(action.params.threshold) : '';
         else if (f === 'params') init = action.params ? JSON.stringify(action.params) : '';
         else init = action[f] != null ? action[f] : '';
-        const inp = meta.json
+        const inp = (meta.json || meta.multi)
           ? el('textarea', { 'aria-label': meta.label, placeholder: meta.ph })
           : el('input', { type: meta.num ? 'number' : 'text', 'aria-label': meta.label, placeholder: meta.ph, ...(meta.num ? { step: 'any' } : {}) });
         inp.value = init;
         row._inputs[f] = inp;
         fields.append(el('div', {}, el('label', {}, meta.label), inp));
       }
+      // 모든 op 공통: 액션별 execution_class (비우면 룰 값 사용)
+      const ec = el('select', { 'aria-label': 'execution_class', title: '이 액션의 실행 클래스. 비우면 룰 전체 값을 따릅니다.' },
+        el('option', { value: '' }, '(룰 값 따름)'),
+        el('option', { value: 'streaming' }, 'streaming'),
+        el('option', { value: 'buffered' }, 'buffered'));
+      ec.value = action.execution_class || '';
+      row._inputs.execution_class = ec;
+      fields.append(el('div', {}, el('label', {}, 'execution_class'), ec));
     };
     opSel.addEventListener('change', render);
     render();
     row._collect = () => {
       const op = opSel.value;
       const a = { op };
+      const ec = row._inputs.execution_class ? row._inputs.execution_class.value : '';
+      if (ec) a.execution_class = ec;
       for (const f of ACTION_FIELDS[op] || []) {
+        if (f === 'sel') {
+          const vals = row._inputs.sel.value.split('\n').map((s) => s.trim()).filter(Boolean);
+          if (!vals.length) continue;
+          if (row._selKeyPref === 'selector' && vals.length === 1) a.selector = vals[0]; // 단수 원본 & 1개 → 단수 유지
+          else a.selectors = vals;                                                       // 그 외 → 복수 배열
+          continue;
+        }
         const raw = row._inputs[f].value.trim();
         if (raw === '') continue;
         if (f === 'threshold') (a.params = a.params || {}).threshold = Number(raw);
