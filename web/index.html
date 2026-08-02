@@ -97,6 +97,17 @@
   .modal pre { flex: 1; overflow: auto; margin: 0; max-height: 55vh; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
   [hidden] { display: none !important; }
+
+  /* 구조화 편집기 (actions / conditions) */
+  button.mini { padding: 3px 10px; font-size: 12.5px; }
+  .struct-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: #fafbfc; }
+  .struct-row .op-col { flex: 0 0 190px; }
+  .struct-row .fields-col { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+  .struct-row .fields-col label { font-weight: 600; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .struct-row textarea { min-height: 46px; }
+  .struct-row .del { flex: 0 0 auto; }
+  .cond-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .cond-row input { flex: 1; }
 </style>
 </head>
 <body>
@@ -308,9 +319,9 @@
             <small class="help">global / customer / page_type / customer_page_type</small>
           </div>
           <div class="field">
-            <label for="re-scope-customer">scope.customer</label>
-            <input type="text" id="re-scope-customer" title="적용 대상 도메인 id (global 룰이면 비움)">
-            <small class="help">대상 도메인 id.</small>
+            <label for="re-scope-customer">대상 도메인 <span style="color:var(--muted);font-weight:400">(scope.customer)</span></label>
+            <input type="text" id="re-scope-customer" title="적용 대상 도메인 id (global 룰이면 비움). 저장 JSON에는 스키마 호환을 위해 scope.customer로 기록됩니다.">
+            <small class="help">대상 도메인 id. 저장 시 스키마 호환상 <code>scope.customer</code> 키로 기록됩니다.</small>
           </div>
           <div class="field">
             <label for="re-scope-pt">scope.page_type</label>
@@ -343,14 +354,24 @@
             <small class="help">룰 활성화 여부.</small>
           </div>
           <div class="field wide">
-            <label for="re-conditions">conditions (JSON 객체)</label>
-            <textarea id="re-conditions" rows="3" placeholder="{}" title="룰 적용 조건 (JSON). 비우면 무조건 적용"></textarea>
-            <small class="help">적용 조건. 비우면 <code>{}</code>.</small>
+            <div class="row spread">
+              <label for="re-conditions">conditions</label>
+              <button type="button" id="re-conditions-toggle" class="mini">JSON으로</button>
+            </div>
+            <div id="re-conditions-form"></div>
+            <div class="row" id="re-cond-addrow" style="margin-top:6px"><button type="button" id="re-cond-add">+ 조건 추가</button></div>
+            <textarea id="re-conditions" rows="3" placeholder="{}" title="룰 적용 조건 (JSON). 비우면 무조건 적용" hidden></textarea>
+            <small class="help">적용 조건. 비우면 무조건 적용(<code>{}</code>). 키–값으로 추가하거나 JSON으로 직접 편집.</small>
           </div>
           <div class="field wide">
-            <label for="re-actions">actions * (JSON 배열, 최대 16개)</label>
-            <textarea id="re-actions" rows="5" placeholder='[ { "op": "remove_element", "selector": "#wa-header" } ]' title="op: remove_element | flatten_element | remove_attribute | keep_attribute | remove_text_token | remove_text_phrase | protect_element | promote_tag | inject_json_ld | prune_by_link_density"></textarea>
-            <small class="help">각 action은 <code>op</code> 필수. selector는 최대 512바이트. 허용 op: remove_element, flatten_element, remove_attribute, keep_attribute, remove_text_token, remove_text_phrase, protect_element, promote_tag, inject_json_ld, prune_by_link_density</small>
+            <div class="row spread">
+              <label for="re-actions">actions * <span style="color:var(--muted);font-weight:400">(최대 16개, 위→아래 순서로 적용)</span></label>
+              <button type="button" id="re-actions-toggle" class="mini">JSON으로</button>
+            </div>
+            <div id="re-actions-form"></div>
+            <div class="row" id="re-act-addrow" style="margin-top:6px"><button type="button" id="re-act-add">+ 액션 추가</button></div>
+            <textarea id="re-actions" rows="5" placeholder='[ { "op": "remove_element", "selector": "#wa-header" } ]' title="op별 필드" hidden></textarea>
+            <small class="help">각 action은 <code>op</code> 필수. selector는 최대 512바이트. op를 고르면 해당 op에 필요한 필드만 표시됩니다.</small>
           </div>
           <div class="field">
             <label style="display:inline" for="re-destructive">safety.destructive</label>
@@ -1362,6 +1383,156 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
       ...values.map((v) => el('option', { value: v }, v)));
   }
 
+  // ============ 구조화 편집기: actions(op별 동적 폼) / conditions(키-값) ============
+  // op별 표시 필드. selector/attribute/token/phrase/to는 최상위, threshold는 params.threshold, params는 params 객체 전체.
+  const ACTION_FIELDS = {
+    remove_element: ['selector'], flatten_element: ['selector'], protect_element: ['selector'],
+    remove_attribute: ['selector', 'attribute'], keep_attribute: ['selector', 'attribute'],
+    remove_text_token: ['token'], remove_text_phrase: ['phrase'],
+    promote_tag: ['selector', 'to'], inject_json_ld: ['selector', 'params'],
+    prune_by_link_density: ['selector', 'threshold'],
+  };
+  const FIELD_META = {
+    selector: { label: 'selector', ph: '#header, .banner' },
+    attribute: { label: 'attribute', ph: 'style' },
+    token: { label: 'token', ph: '™' },
+    phrase: { label: 'phrase', ph: '광고 상품입니다' },
+    to: { label: 'to (대상 태그)', ph: 'section' },
+    threshold: { label: 'threshold (0~1)', ph: '0.8', num: true },
+    params: { label: 'params (JSON)', ph: '{ "@type": "Product" }', json: true },
+  };
+  let actionsMode = 'form';
+  let conditionsMode = 'form';
+
+  const sortKeysDeep = (v) => Array.isArray(v) ? v.map(sortKeysDeep)
+    : (v && typeof v === 'object')
+      ? Object.keys(v).sort().reduce((o, k) => (o[k] = sortKeysDeep(v[k]), o), {})
+      : v;
+  const canon = (o) => JSON.stringify(sortKeysDeep(o));
+
+  // 스펙 필드만으로 재구성한 action이 원본과 동일해야 폼으로 무손실 표현 가능
+  function actionFromSpec(a) {
+    const out = { op: a.op };
+    for (const f of ACTION_FIELDS[a.op] || []) {
+      if (f === 'threshold') { const t = a.params ? a.params.threshold : undefined; if (t !== undefined) out.params = { threshold: t }; }
+      else if (f === 'params') { if (a.params !== undefined) out.params = a.params; }
+      else if (a[f] !== undefined) out[f] = a[f];
+    }
+    return out;
+  }
+  const actionsRepresentable = (actions) => Array.isArray(actions)
+    && actions.every((a) => a && typeof a === 'object' && ACTION_FIELDS[a.op] && canon(actionFromSpec(a)) === canon(a));
+  function conditionsRepresentable(c) {
+    if (!c || typeof c !== 'object' || Array.isArray(c)) return false;
+    const ok = (x) => x === null || ['string', 'number', 'boolean'].includes(typeof x);
+    return Object.values(c).every((v) => ok(v) || (Array.isArray(v) && v.every(ok)));
+  }
+
+  function actionRow(action = {}) {
+    const opSel = el('select', { 'aria-label': 'op', title: '액션 종류' }, ...C.ACTION_OPS.map((o) => el('option', { value: o }, o)));
+    opSel.value = ACTION_FIELDS[action.op] ? action.op : 'remove_element';
+    const fields = el('div', { class: 'fields-col' });
+    const row = el('div', { class: 'struct-row act-row' },
+      el('div', { class: 'op-col' }, opSel), fields,
+      el('button', { type: 'button', class: 'danger del', 'aria-label': '액션 삭제', onclick: () => row.remove() }, '✕'));
+    row._inputs = {};
+    const render = () => {
+      fields.replaceChildren();
+      row._inputs = {};
+      for (const f of ACTION_FIELDS[opSel.value] || []) {
+        const meta = FIELD_META[f];
+        let init = '';
+        if (f === 'threshold') init = action.params && action.params.threshold != null ? String(action.params.threshold) : '';
+        else if (f === 'params') init = action.params ? JSON.stringify(action.params) : '';
+        else init = action[f] != null ? action[f] : '';
+        const inp = meta.json
+          ? el('textarea', { 'aria-label': meta.label, placeholder: meta.ph })
+          : el('input', { type: meta.num ? 'number' : 'text', 'aria-label': meta.label, placeholder: meta.ph, ...(meta.num ? { step: 'any' } : {}) });
+        inp.value = init;
+        row._inputs[f] = inp;
+        fields.append(el('div', {}, el('label', {}, meta.label), inp));
+      }
+    };
+    opSel.addEventListener('change', render);
+    render();
+    row._collect = () => {
+      const op = opSel.value;
+      const a = { op };
+      for (const f of ACTION_FIELDS[op] || []) {
+        const raw = row._inputs[f].value.trim();
+        if (raw === '') continue;
+        if (f === 'threshold') (a.params = a.params || {}).threshold = Number(raw);
+        else if (f === 'params') { try { a.params = JSON.parse(raw); } catch { a.params = { __parse_error__: raw }; } }
+        else a[f] = raw;
+      }
+      return a;
+    };
+    return row;
+  }
+
+  function condRow(key = '', value = undefined) {
+    const k = el('input', { type: 'text', placeholder: 'key', 'aria-label': 'condition key' });
+    k.value = key;
+    const v = el('input', { type: 'text', placeholder: 'value (문자열/숫자/true/["ko"])', 'aria-label': 'condition value' });
+    v.value = value === undefined ? '' : (typeof value === 'string' ? value : JSON.stringify(value));
+    const row = el('div', { class: 'cond-row' }, k, v,
+      el('button', { type: 'button', class: 'danger', 'aria-label': '조건 삭제', onclick: () => row.remove() }, '✕'));
+    row._collect = () => {
+      const key = k.value.trim();
+      if (!key) return null;
+      const raw = v.value.trim();
+      let val = raw;
+      if (raw !== '') { try { const p = JSON.parse(raw); if (typeof p !== 'string') val = p; } catch { /* 문자열 유지 */ } }
+      return [key, val];
+    };
+    return row;
+  }
+
+  const renderActionsForm = (actions) => $('#re-actions-form').replaceChildren(...(actions || []).map((a) => actionRow(a)));
+  const collectActionsForm = () => [...$('#re-actions-form').querySelectorAll('.act-row')].map((r) => r._collect());
+  const renderConditionsForm = (cond) => $('#re-conditions-form').replaceChildren(...Object.entries(cond || {}).map(([k, v]) => condRow(k, v)));
+  function collectConditionsForm() {
+    const out = {};
+    for (const r of $('#re-conditions-form').querySelectorAll('.cond-row')) {
+      const kv = r._collect();
+      if (kv) out[kv[0]] = kv[1];
+    }
+    return out;
+  }
+
+  function setActionsMode(mode, { sync = true } = {}) {
+    if (mode === 'json' && sync && actionsMode === 'form') {
+      $('#re-actions').value = JSON.stringify(collectActionsForm(), null, 2);
+    } else if (mode === 'form' && sync && actionsMode === 'json') {
+      let parsed;
+      try { parsed = JSON.parse($('#re-actions').value.trim() || '[]'); }
+      catch (e) { toast('actions JSON 파싱 실패: ' + e.message, 'error'); return; }
+      if (!actionsRepresentable(parsed)) { toast('이 actions는 폼으로 표현할 수 없어 JSON 편집을 유지합니다.', 'error'); return; }
+      renderActionsForm(parsed);
+    }
+    actionsMode = mode;
+    $('#re-actions').hidden = mode !== 'json';
+    $('#re-actions-form').hidden = mode === 'json';
+    $('#re-act-addrow').hidden = mode === 'json';
+    $('#re-actions-toggle').textContent = mode === 'json' ? '폼으로' : 'JSON으로';
+  }
+  function setConditionsMode(mode, { sync = true } = {}) {
+    if (mode === 'json' && sync && conditionsMode === 'form') {
+      $('#re-conditions').value = JSON.stringify(collectConditionsForm(), null, 2);
+    } else if (mode === 'form' && sync && conditionsMode === 'json') {
+      let parsed;
+      try { parsed = JSON.parse($('#re-conditions').value.trim() || '{}'); }
+      catch (e) { toast('conditions JSON 파싱 실패: ' + e.message, 'error'); return; }
+      if (!conditionsRepresentable(parsed)) { toast('이 conditions는 폼으로 표현할 수 없어 JSON 편집을 유지합니다.', 'error'); return; }
+      renderConditionsForm(parsed);
+    }
+    conditionsMode = mode;
+    $('#re-conditions').hidden = mode !== 'json';
+    $('#re-conditions-form').hidden = mode === 'json';
+    $('#re-cond-addrow').hidden = mode === 'json';
+    $('#re-conditions-toggle').textContent = mode === 'json' ? '폼으로' : 'JSON으로';
+  }
+
   function openRuleEditor(rule) {
     state.editingExisting = !!rule;
     $('#rule-editor').hidden = false;
@@ -1396,8 +1567,13 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
     $('#re-version').value = r.version || 1;
     $('#re-status').value = r.status || 'draft';
     $('#re-enabled').checked = r.enabled !== false;
-    $('#re-conditions').value = JSON.stringify(r.conditions || {}, null, 2);
+    // actions/conditions: 폼으로 무손실 표현 가능하면 폼, 아니면 JSON 모드로 초기화
     $('#re-actions').value = JSON.stringify(r.actions || [], null, 2);
+    if (actionsRepresentable(r.actions || [])) { renderActionsForm(r.actions || []); setActionsMode('form', { sync: false }); }
+    else setActionsMode('json', { sync: false });
+    $('#re-conditions').value = JSON.stringify(r.conditions || {}, null, 2);
+    if (conditionsRepresentable(r.conditions || {})) { renderConditionsForm(r.conditions || {}); setConditionsMode('form', { sync: false }); }
+    else setConditionsMode('json', { sync: false });
     $('#re-destructive').checked = !!r.safety?.destructive;
     $('#re-preview').checked = !!r.safety?.requires_preview;
     $('#re-src-type').value = r.metadata?.source?.type || '';
@@ -1436,8 +1612,8 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
       enabled: $('#re-enabled').checked,
       version: parseInt($('#re-version').value, 10) || 1,
       status: $('#re-status').value,
-      conditions: parseJson('#re-conditions', 'conditions', {}),
-      actions: parseJson('#re-actions', 'actions', []),
+      conditions: conditionsMode === 'form' ? collectConditionsForm() : parseJson('#re-conditions', 'conditions', {}),
+      actions: actionsMode === 'form' ? collectActionsForm() : parseJson('#re-actions', 'actions', []),
       safety: { destructive: $('#re-destructive').checked, requires_preview: $('#re-preview').checked },
       metadata: {
         source: { type: $('#re-src-type').value.trim() || null, reference: $('#re-src-ref').value.trim() || null },
@@ -1447,6 +1623,13 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
         risk_level: $('#re-risk').value || null,
       },
     };
+    // 폼 모드에서 action의 params(JSON) 파싱 실패를 오류로 표면화
+    if (actionsMode === 'form' && Array.isArray(rule.actions)) {
+      rule.actions.forEach((a, i) => {
+        if (a && a.params && Object.prototype.hasOwnProperty.call(a.params, '__parse_error__'))
+          errors.push(`actions[${i}].params JSON 파싱 실패`);
+      });
+    }
     return { rule, errors };
   }
 
@@ -1544,6 +1727,13 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
   $('#rule-new-btn').addEventListener('click', () => openRuleEditor(null));
   $('#re-preview-btn').addEventListener('click', onRulePreview);
   $('#re-cancel-btn').addEventListener('click', () => { $('#rule-editor').hidden = true; });
+  $('#re-actions-toggle').addEventListener('click', () => setActionsMode(actionsMode === 'form' ? 'json' : 'form'));
+  $('#re-conditions-toggle').addEventListener('click', () => setConditionsMode(conditionsMode === 'form' ? 'json' : 'form'));
+  $('#re-act-add').addEventListener('click', () => {
+    if ($('#re-actions-form').querySelectorAll('.act-row').length >= C.LIMITS.ACTIONS_MAX) { toast('actions는 최대 16개입니다.', 'error'); return; }
+    $('#re-actions-form').append(actionRow({}));
+  });
+  $('#re-cond-add').addEventListener('click', () => $('#re-conditions-form').append(condRow()));
   $('#modal-save').addEventListener('click', onRuleConfirmSave);
   $('#modal-cancel').addEventListener('click', closeModal);
   $('#modal').addEventListener('click', (ev) => { if (ev.target === $('#modal')) closeModal(); });
