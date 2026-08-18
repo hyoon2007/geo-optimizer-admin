@@ -42,7 +42,10 @@ class RealSpinClient {
     try { body = await res.json(); } catch { /* 비JSON 응답 */ }
     if (!res.ok) {
       // 주의: 토큰 등 요청 헤더는 절대 에러에 포함하지 않는다.
-      throw new SpinError(`Spin 응답 오류 (HTTP ${res.status})`, res.status === 401 || res.status === 403 ? 502 : res.status);
+      // Spin 응답 본문의 사유(error/message)는 진단에 유용하므로 함께 노출한다.
+      const reason = body && (body.error || body.message);
+      const detail = typeof reason === 'string' && reason ? `: ${reason}` : '';
+      throw new SpinError(`Spin 응답 오류 (HTTP ${res.status})${detail}`, res.status === 401 || res.status === 403 ? 502 : res.status);
     }
     return body || {};
   }

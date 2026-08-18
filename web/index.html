@@ -108,6 +108,9 @@
   .struct-row .del { flex: 0 0 auto; }
   .cond-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
   .cond-row input { flex: 1; }
+  .meta-details { border-top: 1px solid var(--border); padding-top: 10px; }
+  .meta-details > summary { cursor: pointer; font-weight: 600; font-size: 15px; list-style: revert; }
+  .meta-details[open] > summary { margin-bottom: 4px; }
 </style>
 </head>
 <body>
@@ -191,7 +194,7 @@
             </div>
             <div class="field wide">
               <label for="add-pagetypes">page_types (콤마로 구분, 선택)</label>
-              <input type="text" id="add-pagetypes" placeholder="예: product, search" title="허용: product, category, search, landing, article, policy, unknown">
+              <input type="text" id="add-pagetypes" placeholder="예: product, search" title="예시(자유 입력): product, category, search, landing, article, policy, unknown — 새 값도 가능">
             </div>
           </div>
           <ul id="add-domain-errors" class="errors"></ul>
@@ -222,7 +225,7 @@
             <div class="field wide">
               <label for="dom-pagetypes">page_types (콤마로 구분)</label>
               <input type="text" id="dom-pagetypes" placeholder="product, search" title="이 도메인이 사용하는 페이지 타입 목록">
-              <small class="help">허용값: product, category, search, landing, article, policy, unknown</small>
+              <small class="help">예시(자유 입력): product, category, search, landing, article, policy, unknown — 새 값도 가능</small>
             </div>
           </div>
           <ul id="domain-errors" class="errors"></ul>
@@ -383,41 +386,52 @@
             <input type="checkbox" id="re-preview" style="width:auto;margin-left:6px" title="배포 전 미리보기 승인이 필요한 룰인지 표시">
             <small class="help">미리보기 승인 필요 여부.</small>
           </div>
-          <div class="field">
-            <label for="re-src-type">metadata.source.type</label>
-            <input type="text" id="re-src-type" placeholder="manual, schema.org, …" title="룰 근거 출처의 유형 — GEO/AEO 신뢰성 판단에 사용">
-            <small class="help">룰 근거 출처 유형.</small>
-          </div>
-          <div class="field">
-            <label for="re-src-ref">metadata.source.reference</label>
-            <input type="text" id="re-src-ref" placeholder="URL 또는 문서 참조" title="출처 참조(URL/문서). AI 검색 인용 보존(GEO/AEO)에 활용">
-            <small class="help">출처 참조. 인용 보존용.</small>
-          </div>
-          <div class="field wide">
-            <label for="re-citations">metadata.citations (콤마 구분)</label>
-            <input type="text" id="re-citations" placeholder="https://schema.org/Product" title="보존해야 할 인용 출처 목록 — GEO/AEO에서 답변 인용 근거로 유지">
-            <small class="help">GEO/AEO 인용 보존용 출처 URL 목록.</small>
-          </div>
-          <div class="field">
-            <label for="re-tags">metadata.tags (콤마 구분)</label>
-            <input type="text" id="re-tags" placeholder="geo, aeo" title="검색/분류용 태그">
-            <small class="help">분류 태그.</small>
-          </div>
-          <div class="field">
-            <label for="re-owner">metadata.owner</label>
-            <input type="text" id="re-owner" placeholder="담당자" title="룰 담당자">
-            <small class="help">담당자(선택).</small>
-          </div>
-          <div class="field">
-            <label for="re-risk">metadata.risk_level</label>
-            <select id="re-risk" title="룰 적용 리스크 수준">
-              <option value="">(없음)</option>
-              <option value="low">low</option>
-              <option value="medium">medium</option>
-              <option value="high">high</option>
-            </select>
-            <small class="help">리스크 수준(선택).</small>
-          </div>
+          <details class="field wide meta-details">
+            <summary>metadata <span style="color:var(--muted);font-weight:400">— 출처·인용·태그·담당·리스크 (선택 · 클릭해서 펼치기)</span></summary>
+            <p class="help" style="margin:6px 0 10px">최적화 동작에는 영향이 없고, 룰의 근거·신뢰성·담당 등 <strong>거버넌스/추적성</strong> 정보를 남깁니다.</p>
+            <div class="form-grid">
+              <div class="field">
+                <label for="re-src-type">source.type</label>
+                <input type="text" id="re-src-type" placeholder="manual, schema.org, …" title="룰 근거 출처의 유형 — GEO/AEO 신뢰성 판단에 사용">
+                <small class="help">룰 근거 출처 유형.</small>
+              </div>
+              <div class="field">
+                <label for="re-src-ref">source.reference</label>
+                <input type="text" id="re-src-ref" placeholder="URL 또는 문서 참조" title="출처 참조(URL/문서). AI 검색 인용 보존(GEO/AEO)에 활용">
+                <small class="help">출처 참조. 인용 보존용.</small>
+              </div>
+              <div class="field wide">
+                <label for="re-src-note">source.note</label>
+                <input type="text" id="re-src-note" placeholder="출처에 대한 설명 (선택)" title="출처에 대한 자유 설명. 저장 시 보존됩니다.">
+                <small class="help">출처 설명(선택). 저장 시 보존됩니다.</small>
+              </div>
+              <div class="field wide">
+                <label for="re-citations">citations (JSON 배열)</label>
+                <textarea id="re-citations" rows="3" placeholder='[ { "type": "source", "reference": "https://schema.org/Product" } ]' title="인용 출처 객체의 배열. GEO/AEO 인용 보존용. Spin 스키마는 문자열이 아닌 객체 배열을 요구합니다."></textarea>
+                <small class="help">GEO/AEO 인용 보존용. 인용 객체의 배열(예: <code>[{"type":"source","reference":"..."}]</code>). 비우면 <code>[]</code>.</small>
+              </div>
+              <div class="field">
+                <label for="re-tags">tags (콤마 구분)</label>
+                <input type="text" id="re-tags" placeholder="geo, aeo" title="검색/분류용 태그">
+                <small class="help">분류 태그.</small>
+              </div>
+              <div class="field">
+                <label for="re-owner">owner</label>
+                <input type="text" id="re-owner" placeholder="담당자" title="룰 담당자">
+                <small class="help">담당자(선택).</small>
+              </div>
+              <div class="field">
+                <label for="re-risk">risk_level</label>
+                <select id="re-risk" title="룰 적용 리스크 수준">
+                  <option value="">(없음)</option>
+                  <option value="low">low</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                </select>
+                <small class="help">리스크 수준(선택).</small>
+              </div>
+            </div>
+          </details>
           <div class="field">
             <label style="display:inline" for="re-attach">현재 매니페스트에 등록</label>
             <input type="checkbox" id="re-attach" style="width:auto;margin-left:6px" checked title="저장 시 현재 선택된 도메인/page_type 매니페스트에 룰 포인터를 추가/갱신">
@@ -1614,7 +1628,8 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
     $('#re-preview').checked = !!r.safety?.requires_preview;
     $('#re-src-type').value = r.metadata?.source?.type || '';
     $('#re-src-ref').value = r.metadata?.source?.reference || '';
-    $('#re-citations').value = (r.metadata?.citations || []).join(', ');
+    $('#re-src-note').value = r.metadata?.source?.note || '';
+    $('#re-citations').value = JSON.stringify(r.metadata?.citations || [], null, 2);
     $('#re-tags').value = (r.metadata?.tags || []).join(', ');
     $('#re-owner').value = r.metadata?.owner || '';
     $('#re-risk').value = r.metadata?.risk_level || '';
@@ -1652,13 +1667,15 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
       actions: actionsMode === 'form' ? collectActionsForm() : parseJson('#re-actions', 'actions', []),
       safety: { destructive: $('#re-destructive').checked, requires_preview: $('#re-preview').checked },
       metadata: {
-        source: { type: $('#re-src-type').value.trim() || null, reference: $('#re-src-ref').value.trim() || null },
-        citations: parseCsv($('#re-citations').value),
+        source: { type: $('#re-src-type').value.trim() || null, reference: $('#re-src-ref').value.trim() || null, note: $('#re-src-note').value.trim() || null },
+        // citations는 Spin 스키마상 객체 배열 → 문자열로 평탄화하지 않고 JSON으로 보존
+        citations: parseJson('#re-citations', 'metadata.citations', []),
         tags: parseCsv($('#re-tags').value),
         owner: $('#re-owner').value.trim() || null,
         risk_level: $('#re-risk').value || null,
       },
     };
+    if (!Array.isArray(rule.metadata.citations)) errors.push('metadata.citations는 JSON 배열이어야 합니다.');
     // 폼 모드에서 action의 params(JSON) 파싱 실패를 오류로 표면화
     if (actionsMode === 'form' && Array.isArray(rule.actions)) {
       rule.actions.forEach((a, i) => {
