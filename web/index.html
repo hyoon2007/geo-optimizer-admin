@@ -473,6 +473,20 @@
   </div>
 </div>
 
+<!-- 룰 버전 관리(롤백/승격) 모달 -->
+<div id="ver-modal" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ver-modal-title">
+    <h3 id="ver-modal-title">룰 버전 관리</h3>
+    <p id="ver-modal-sub" class="help" style="margin:0"></p>
+    <div id="ver-list" style="overflow:auto"></div>
+    <ul id="ver-errors" class="errors"></ul>
+    <div class="modal-actions">
+      <button id="ver-cancel">닫기</button>
+      <button id="ver-activate" class="primary">선택 버전 활성화</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /*
  * 공유 API 계약 — shared/api-contract.js 의 인라인 복사본.
@@ -492,6 +506,8 @@ const GeoContract = (() => {
     DOMAIN_PAGE_TYPES: (id) => `/api/domains/${encodeURIComponent(id)}/page-types`,
     RULES: '/api/rules',
     RULE: (ruleId) => `/api/rules/${encodeURIComponent(ruleId)}`,
+    RULE_VERSIONS: (ruleId) => `/api/rules/${encodeURIComponent(ruleId)}/versions`,
+    RULE_ACTIVATE: (ruleId) => `/api/rules/${encodeURIComponent(ruleId)}/activate`,
     CONFIG: '/api/config',
     HEALTH: '/api/health',
   };
@@ -885,6 +901,14 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
         }
         return request(`${C.API.RULE(rule.rule_id)}?${q}`, { method: 'POST', body: rule });
       },
+      listVersions: (ruleId) => request(C.API.RULE_VERSIONS(ruleId)),
+      activateVersion(ruleId, { version, domain, pageType }) {
+        const q = new URLSearchParams();
+        if (domain) q.set('domain', domain);
+        if (pageType) q.set('page_type', pageType);
+        const qs = q.toString();
+        return request(`${C.API.RULE_ACTIVATE(ruleId)}${qs ? `?${qs}` : ''}`, { method: 'POST', body: { version } });
+      },
       getConfig: () => request(C.API.CONFIG),
     };
   }
@@ -1064,6 +1088,34 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
           manifest.version += 1;
         }
         return { ok: true, version };
+      },
+      async listVersions(ruleId) {
+        await delay();
+        const versions = [];
+        for (let n = 1; n <= 50; n++) {
+          const r = data.rules.get(`${ruleId}@${n}`);
+          if (!r) break;
+          versions.push({ version: n, name: r.name, status: r.status, type: r.type, enabled: r.enabled !== false });
+        }
+        return { ok: true, versions };
+      },
+      async activateVersion(ruleId, { version, domain, pageType }) {
+        await delay();
+        if (!data.rules.has(`${ruleId}@${version}`)) throw new ApiError(`버전 ${version}이 존재하지 않습니다.`, 404);
+        const key = scopeKey(domain || null, pageType || null);
+        let manifest = data.manifests.get(key);
+        if (!manifest) {
+          manifest = { schema_version: '1.0', manifest_id: key.replace(/\//g, ':'),
+            env: C.DEFAULT_ENV, channel: C.DEFAULT_CHANNEL,
+            scope: { tenant: 'default', customer: domain || null, page_type: pageType || null },
+            version: 0, rules: [] };
+          data.manifests.set(key, manifest);
+        }
+        const idx = manifest.rules.findIndex((p) => p.rule_id === ruleId);
+        if (idx >= 0) manifest.rules[idx] = { rule_id: ruleId, version };
+        else manifest.rules.push({ rule_id: ruleId, version });
+        manifest.version += 1;
+        return { ok: true, version, manifest_version: manifest.version };
       },
       async getConfig() {
         await delay();
@@ -1386,7 +1438,7 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
       el('table', {},
         el('thead', {}, el('tr', {},
           el('th', {}, '이름'), el('th', {}, 'rule_id'), el('th', {}, 'type'),
-          el('th', {}, 'priority'), el('th', {}, 'status'), el('th', {}, 'enabled'), el('th', {}, ''))),
+          el('th', {}, 'priority'), el('th', {}, 'status'), el('th', {}, 'enabled'), el('th', {}, '활성 버전'), el('th', {}, ''))),
         el('tbody', {}, rules.sort((a, b) => b.priority - a.priority).map((r) =>
           el('tr', {},
             el('td', {}, r.name),
@@ -1395,6 +1447,7 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
             el('td', {}, String(r.priority)),
             el('td', {}, el('span', { class: `badge status-${r.status}` }, r.status)),
             el('td', {}, el('span', { class: r.enabled ? 'badge on' : 'badge off' }, r.enabled ? 'on' : 'off')),
+            el('td', {}, el('button', { class: 'mini', title: '버전 목록 보기 / 활성 버전 전환(롤백·승격)', onclick: () => openVersionModal(r.rule_id, r.version) }, `v${r.version} · 관리`)),
             el('td', {}, el('button', { onclick: () => openRuleEditor(r) }, '편집')))))));
   }
 
@@ -1721,6 +1774,74 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
 
   function closeModal() { $('#modal').hidden = true; pendingRule = null; }
 
+  // ---------------- 룰 버전 관리(롤백/승격) ----------------
+  let verModalRuleId = null;
+  let verModalActive = null;
+  async function openVersionModal(ruleId, activeVersion) {
+    verModalRuleId = ruleId;
+    verModalActive = activeVersion;
+    $('#ver-modal-title').textContent = `버전 관리 — ${ruleId}`;
+    const scopeLabel = isGlobal() ? 'global' : `customer/${state.selected}`;
+    const pt = $('#rules-pt-filter').value;
+    $('#ver-modal-sub').textContent = `매니페스트 스코프 ${scopeLabel}${pt ? ` + page_type/${pt}` : ''} 에서 활성 버전을 전환합니다. (룰 본문은 변경되지 않습니다)`;
+    $('#ver-list').replaceChildren(el('p', { class: 'help' }, '불러오는 중…'));
+    showErrors('#ver-errors', []);
+    $('#ver-modal').hidden = false;
+    $('#ver-activate').disabled = true;
+    try {
+      const d = await api.listVersions(ruleId);
+      renderVersionList(d.versions || []);
+    } catch (e) {
+      $('#ver-list').replaceChildren();
+      showErrors('#ver-errors', [e.message]);
+    }
+  }
+
+  function renderVersionList(versions) {
+    if (!versions.length) {
+      $('#ver-list').replaceChildren(el('p', { class: 'help' }, '저장된 버전이 없습니다.'));
+      return;
+    }
+    $('#ver-list').replaceChildren(...versions.map((v) => {
+      const isActive = v.version === verModalActive;
+      const radio = el('input', { type: 'radio', name: 'ver-pick', value: String(v.version), id: `ver-pick-${v.version}` });
+      if (isActive) radio.checked = true;
+      radio.addEventListener('change', () => { $('#ver-activate').disabled = false; });
+      return el('label', { class: 'row', for: `ver-pick-${v.version}`,
+        style: 'gap:10px;padding:8px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer' },
+        radio,
+        el('strong', {}, `v${v.version}`),
+        el('span', { class: `badge status-${v.status}` }, v.status || '—'),
+        el('span', { style: 'color:var(--muted)' }, v.name || ''),
+        isActive ? el('span', { class: 'badge on' }, '현재 활성') : null);
+    }));
+    $('#ver-activate').disabled = false;
+  }
+
+  async function onVersionActivate() {
+    const picked = $('#ver-list').querySelector('input[name="ver-pick"]:checked');
+    if (!picked) return;
+    const version = parseInt(picked.value, 10);
+    if (version === verModalActive) { toast('이미 활성 상태인 버전입니다.'); return; }
+    const btn = $('#ver-activate');
+    btn.disabled = true;
+    try {
+      await api.activateVersion(verModalRuleId, {
+        version,
+        domain: isGlobal() ? null : state.selected,
+        pageType: $('#rules-pt-filter').value || null,
+      });
+      toast(`"${verModalRuleId}" 활성 버전을 v${version}으로 전환했습니다.`);
+      closeVersionModal();
+      await loadRules();
+    } catch (e) {
+      showErrors('#ver-errors', e.errors && e.errors.length ? e.errors : [e.message]);
+      btn.disabled = false;
+    }
+  }
+
+  function closeVersionModal() { $('#ver-modal').hidden = true; verModalRuleId = null; verModalActive = null; }
+
   // ---------------- 환경 설정(spin.toml) 스텁 ----------------
   async function loadConfigStub() {
     configLoaded = true;
@@ -1790,7 +1911,14 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
   $('#modal-save').addEventListener('click', onRuleConfirmSave);
   $('#modal-cancel').addEventListener('click', closeModal);
   $('#modal').addEventListener('click', (ev) => { if (ev.target === $('#modal')) closeModal(); });
-  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !$('#modal').hidden) closeModal(); });
+  $('#ver-activate').addEventListener('click', onVersionActivate);
+  $('#ver-cancel').addEventListener('click', closeVersionModal);
+  $('#ver-modal').addEventListener('click', (ev) => { if (ev.target === $('#ver-modal')) closeVersionModal(); });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape') return;
+    if (!$('#modal').hidden) closeModal();
+    else if (!$('#ver-modal').hidden) closeVersionModal();
+  });
 
   // ---------------- 초기화 ----------------
   (async () => {

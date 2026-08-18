@@ -20,6 +20,8 @@ const GeoContract = (() => {
     DOMAIN_PAGE_TYPES: (id) => `/api/domains/${encodeURIComponent(id)}/page-types`,
     RULES: '/api/rules',
     RULE: (ruleId) => `/api/rules/${encodeURIComponent(ruleId)}`,
+    RULE_VERSIONS: (ruleId) => `/api/rules/${encodeURIComponent(ruleId)}/versions`,
+    RULE_ACTIVATE: (ruleId) => `/api/rules/${encodeURIComponent(ruleId)}/activate`,
     CONFIG: '/api/config',
     HEALTH: '/api/health',
   };

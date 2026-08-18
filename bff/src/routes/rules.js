@@ -12,6 +12,33 @@ function createRulesRouter({ spin, config }) {
     return null;
   };
 
+  // 쿼리(domain/page_type)에서 스코프 객체 도출 (GLOBAL_ID/미지정 → customer null)
+  const scopeFromQuery = (q) => ({
+    customer: q.domain && q.domain !== C.GLOBAL_ID ? q.domain : null,
+    pageType: q.page_type || null,
+  });
+
+  // 해당 스코프 매니페스트에 {rule_id, version} 포인터를 upsert (없으면 새로 생성). manifest.version은 +1.
+  async function attachToManifest({ ruleId, version, scopeObj }) {
+    const mKey = C.KV.manifest(C.KV.manifestScope(scopeObj), config.env, config.channel);
+    const { found, value } = await spin.kvGet(mKey);
+    const manifest = found ? value : {
+      schema_version: '1.0',
+      manifest_id: C.KV.manifestScope(scopeObj).replace(/\//g, ':'),
+      env: config.env, channel: config.channel,
+      scope: { tenant: 'default', customer: scopeObj.customer, page_type: scopeObj.pageType },
+      version: 0, rules: [],
+    };
+    const rules = Array.isArray(manifest.rules) ? manifest.rules : [];
+    const idx = rules.findIndex((p) => p.rule_id === ruleId);
+    if (idx >= 0) rules[idx] = { rule_id: ruleId, version };
+    else rules.push({ rule_id: ruleId, version });
+    manifest.rules = rules;
+    manifest.version = (manifest.version || 0) + 1;
+    await spin.kvSet(mKey, manifest);
+    return { manifest_key: mKey, manifest_version: manifest.version };
+  }
+
   // GET /api/rules?scope=global | ?domain=:id[&page_type=pt]
   // 매니페스트를 읽고 rule 포인터를 fan-out 조회해 룰 배열로 집계한다.
   router.get('/', async (req, res, next) => {
@@ -61,30 +88,39 @@ function createRulesRouter({ spin, config }) {
 
       let attached = null;
       if (req.query.attach === '1') {
-        const scopeObj = {
-          customer: req.query.domain && req.query.domain !== C.GLOBAL_ID ? req.query.domain : null,
-          pageType: req.query.page_type || null,
-        };
-        const mKey = C.KV.manifest(C.KV.manifestScope(scopeObj), config.env, config.channel);
-        const { found, value } = await spin.kvGet(mKey);
-        const manifest = found ? value : {
-          schema_version: '1.0',
-          manifest_id: C.KV.manifestScope(scopeObj).replace(/\//g, ':'),
-          env: config.env, channel: config.channel,
-          scope: { tenant: 'default', customer: scopeObj.customer, page_type: scopeObj.pageType },
-          version: 0, rules: [],
-        };
-        const rules = Array.isArray(manifest.rules) ? manifest.rules : [];
-        const idx = rules.findIndex((p) => p.rule_id === rule.rule_id);
-        if (idx >= 0) rules[idx] = { rule_id: rule.rule_id, version };
-        else rules.push({ rule_id: rule.rule_id, version });
-        manifest.rules = rules;
-        manifest.version = (manifest.version || 0) + 1;
-        await spin.kvSet(mKey, manifest);
-        attached = { manifest_key: mKey, manifest_version: manifest.version };
+        attached = await attachToManifest({ ruleId: rule.rule_id, version, scopeObj: scopeFromQuery(req.query) });
       }
 
       res.json({ ok: true, key: result.key, bytes: result.bytes, version, attached });
+    } catch (err) { next(err); }
+  });
+
+  // GET /api/rules/:rule_id/versions → 존재하는 버전 목록 (1..N, 첫 공백에서 중단, 최대 50)
+  router.get('/:rule_id/versions', async (req, res, next) => {
+    try {
+      const ruleId = req.params.rule_id;
+      const versions = [];
+      for (let n = 1; n <= 50; n++) {
+        const { found, value } = await spin.kvGet(C.KV.rule(ruleId, n));
+        if (!found) break;
+        versions.push({ version: n, name: value && value.name, status: value && value.status, type: value && value.type, enabled: !(value && value.enabled === false) });
+      }
+      res.json({ ok: true, versions });
+    } catch (err) { next(err); }
+  });
+
+  // POST /api/rules/:rule_id/activate?domain=&page_type=  body {version}
+  // 룰 본문은 그대로 두고, 해당 스코프 매니페스트 포인터만 지정 버전으로 전환 (원클릭 롤백/승격).
+  router.post('/:rule_id/activate', async (req, res, next) => {
+    try {
+      const ruleId = req.params.rule_id;
+      const version = parseInt(req.body && req.body.version, 10);
+      if (!Number.isInteger(version) || version < 1)
+        return res.status(400).json({ ok: false, error: 'version은 1 이상의 정수여야 합니다.' });
+      const { found } = await spin.kvGet(C.KV.rule(ruleId, version));
+      if (!found) return res.status(404).json({ ok: false, error: `룰 "${ruleId}"의 버전 ${version}이 존재하지 않습니다.` });
+      const attached = await attachToManifest({ ruleId, version, scopeObj: scopeFromQuery(req.query) });
+      res.json({ ok: true, version, ...attached });
     } catch (err) { next(err); }
   });
 
