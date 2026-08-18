@@ -39,6 +39,22 @@ function createRulesRouter({ spin, config }) {
     return { manifest_key: mKey, manifest_version: manifest.version };
   }
 
+  // 해당 스코프 매니페스트에서 rule_id 포인터를 제거(detach). 룰 문서 자체는 보존한다.
+  async function detachFromManifest({ ruleId, scopeObj }) {
+    const mKey = C.KV.manifest(C.KV.manifestScope(scopeObj), config.env, config.channel);
+    const { found, value } = await spin.kvGet(mKey);
+    if (!found) return { found: false, removed: false, manifest_key: mKey };
+    const rules = Array.isArray(value.rules) ? value.rules : [];
+    const next = rules.filter((p) => p.rule_id !== ruleId);
+    const removed = next.length !== rules.length;
+    if (removed) {
+      value.rules = next;
+      value.version = (value.version || 0) + 1;
+      await spin.kvSet(mKey, value);
+    }
+    return { found: true, removed, manifest_key: mKey, manifest_version: value.version };
+  }
+
   // GET /api/rules?scope=global | ?domain=:id[&page_type=pt]
   // 매니페스트를 읽고 rule 포인터를 fan-out 조회해 룰 배열로 집계한다.
   router.get('/', async (req, res, next) => {
@@ -121,6 +137,17 @@ function createRulesRouter({ spin, config }) {
       if (!found) return res.status(404).json({ ok: false, error: `룰 "${ruleId}"의 버전 ${version}이 존재하지 않습니다.` });
       const attached = await attachToManifest({ ruleId, version, scopeObj: scopeFromQuery(req.query) });
       res.json({ ok: true, version, ...attached });
+    } catch (err) { next(err); }
+  });
+
+  // DELETE /api/rules/:rule_id?domain=&page_type=
+  // 해당 스코프 매니페스트에서 룰 포인터만 제거(detach). 룰 문서는 보존되어 다른 스코프/버전에서 계속 사용 가능.
+  router.delete('/:rule_id', async (req, res, next) => {
+    try {
+      const result = await detachFromManifest({ ruleId: req.params.rule_id, scopeObj: scopeFromQuery(req.query) });
+      if (!result.found) return res.status(404).json({ ok: false, error: '해당 스코프의 매니페스트가 없습니다.' });
+      if (!result.removed) return res.status(404).json({ ok: false, error: '이 스코프 매니페스트에 해당 룰이 없습니다.' });
+      res.json({ ok: true, ...result });
     } catch (err) { next(err); }
   });
 

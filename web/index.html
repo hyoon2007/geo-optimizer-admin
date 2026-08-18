@@ -907,6 +907,13 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
         }
         return request(`${C.API.RULE(rule.rule_id)}?${q}`, { method: 'POST', body: rule });
       },
+      deleteRule(ruleId, { domain, pageType }) {
+        const q = new URLSearchParams();
+        if (domain) q.set('domain', domain);
+        if (pageType) q.set('page_type', pageType);
+        const qs = q.toString();
+        return request(`${C.API.RULE(ruleId)}${qs ? `?${qs}` : ''}`, { method: 'DELETE' });
+      },
       listVersions: (ruleId) => request(C.API.RULE_VERSIONS(ruleId)),
       activateVersion(ruleId, { version, domain, pageType }) {
         const q = new URLSearchParams();
@@ -1094,6 +1101,17 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
           manifest.version += 1;
         }
         return { ok: true, version };
+      },
+      async deleteRule(ruleId, { domain, pageType }) {
+        await delay();
+        const key = scopeKey(domain || null, pageType || null);
+        const manifest = data.manifests.get(key);
+        if (!manifest) throw new ApiError('해당 스코프의 매니페스트가 없습니다.', 404);
+        const before = manifest.rules.length;
+        manifest.rules = manifest.rules.filter((p) => p.rule_id !== ruleId);
+        if (manifest.rules.length === before) throw new ApiError('이 스코프 매니페스트에 해당 룰이 없습니다.', 404);
+        manifest.version += 1;
+        return { ok: true, removed: true, manifest_version: manifest.version };
       },
       async listVersions(ruleId) {
         await delay();
@@ -1410,6 +1428,18 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
     } catch (e) { handleApiError(e, '룰 목록을 불러오지 못했습니다'); }
   }
 
+  async function onDeleteRule(r) {
+    const scopeDesc = (isGlobal() ? 'global' : `customer/${state.selected}`) +
+      ($('#rules-pt-filter').value ? ` + page_type/${$('#rules-pt-filter').value}` : '');
+    if (!confirm(`룰 "${r.rule_id}"을(를) 이 스코프(${scopeDesc}) 목록에서 제거할까요?\n\n· 매니페스트에서 포인터만 제거합니다 — 이 스코프에 더 이상 적용되지 않습니다.\n· 룰 정의 자체는 KV에 보존되어 다른 스코프에서 계속 쓰이거나 나중에 다시 추가할 수 있습니다.`)) return;
+    try {
+      await api.deleteRule(r.rule_id, { domain: isGlobal() ? null : state.selected, pageType: $('#rules-pt-filter').value || null });
+      toast(`"${r.rule_id}"을(를) 목록에서 제거했습니다.`);
+      $('#rule-editor').hidden = true;
+      await loadRules();
+    } catch (e) { toast(`삭제 실패: ${e.message}`, 'error'); }
+  }
+
   function renderRulesList() {
     const wrap = $('#rules-list');
     wrap.replaceChildren();
@@ -1455,7 +1485,9 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
             el('td', {}, el('span', { class: `badge status-${r.status}` }, r.status)),
             el('td', {}, el('span', { class: r.enabled ? 'badge on' : 'badge off' }, r.enabled ? 'on' : 'off')),
             el('td', {}, el('button', { class: 'ver-chip', title: '클릭: 버전 목록 보기 / 활성 버전 전환(롤백·승격)', onclick: () => openVersionModal(r.rule_id, r.version) }, `v${r.version}`)),
-            el('td', {}, el('button', { onclick: () => openRuleEditor(r) }, '편집')))))));
+            el('td', {}, el('div', { class: 'row', style: 'gap:6px;flex-wrap:nowrap' },
+              el('button', { onclick: () => openRuleEditor(r) }, '편집'),
+              el('button', { class: 'danger', title: '이 스코프(매니페스트)에서 제거. 룰 정의는 보존됩니다.', onclick: () => onDeleteRule(r) }, '삭제'))))))));
   }
 
   function fillSelect(sel, values, { empty } = {}) {
@@ -1948,7 +1980,12 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
   $('#hpr-add-btn').addEventListener('click', () => $('#hpr-rows').append(hprRow()));
   $('#pt-save-btn').addEventListener('click', onPageTypesSave);
   $('#rules-refresh-btn').addEventListener('click', loadRules);
-  $('#rules-pt-filter').addEventListener('change', loadRules);
+  $('#rules-pt-filter').addEventListener('change', () => {
+    // 스코프(page_type)가 바뀌면 편집기를 닫는다 — 다른 스코프의 룰을 편집 중이던 상태로
+    // 저장해 엉뚱한 매니페스트에 attach되는 사고를 방지.
+    $('#rule-editor').hidden = true;
+    loadRules();
+  });
   $('#rule-new-btn').addEventListener('click', () => openRuleEditor(null));
   $('#re-preview-btn').addEventListener('click', onRulePreview);
   $('#re-newver-btn').addEventListener('click', onNewVersion);
