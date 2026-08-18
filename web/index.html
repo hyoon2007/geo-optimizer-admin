@@ -254,8 +254,8 @@
           </div>
           <div class="field">
             <label for="pt-fallback">폴백(fallback)</label>
-            <input type="text" id="pt-fallback" list="pt-suggest" placeholder="unknown" title="어떤 규칙에도 매칭되지 않을 때 사용할 페이지 타입 (자유 입력)">
-            <small class="help">허용값 제한 없음. KV에 저장된 값이 자동완성으로 제안됩니다.</small>
+            <select id="pt-fallback" title="어떤 규칙에도 매칭되지 않을 때 사용할 페이지 타입"></select>
+            <small class="help">Spin이 허용하는 값 중에서만 선택 (product/category/search/landing/article/policy/unknown).</small>
           </div>
           <div class="field">
             <label for="pt-version">버전(version)</label>
@@ -554,8 +554,10 @@ const GeoContract = (() => {
     'inject_json_ld', 'prune_by_link_density',
   ];
 
-  // page_type은 고정 허용값(allowlist)을 두지 않는다 — 자유 입력. 비어있지 않은 문자열이면 되고,
-  // "중복 정의"만 검증에서 막는다. UI 자동완성 후보는 KV에 저장된 값에서 동적으로 채운다.
+  // 페이지타입 설정(page-type config)의 page_type/fallback은 Spin이 아래 enum을 강제한다
+  // (커스텀 값은 Spin에서 "page type config JSON must validate" 400으로 거부됨).
+  // 반면 룰의 scope.page_type은 Spin이 자유값을 허용하므로 enum을 강제하지 않는다.
+  const PAGE_TYPE_ENUM = ['product', 'category', 'search', 'landing', 'article', 'policy', 'unknown'];
 
   const SCOPE_LEVELS = ['global', 'customer', 'page_type', 'customer_page_type'];
 
@@ -745,9 +747,8 @@ const GeoContract = (() => {
     if (!cfg || typeof cfg !== 'object') return ['페이지타입 설정이 객체가 아닙니다.'];
     if (cfg.enabled !== undefined && typeof cfg.enabled !== 'boolean')
       errors.push('enabled는 boolean이어야 합니다.');
-    if (cfg.fallback !== undefined && cfg.fallback !== null &&
-        (typeof cfg.fallback !== 'string' || cfg.fallback.trim().length === 0))
-      errors.push('fallback은 비어있지 않은 문자열이어야 합니다.');
+    if (cfg.fallback !== undefined && cfg.fallback !== null && !PAGE_TYPE_ENUM.includes(cfg.fallback))
+      errors.push(`fallback("${cfg.fallback}")은 허용된 page_type이 아닙니다. (${PAGE_TYPE_ENUM.join(', ')})`);
     if (cfg.version !== undefined && (!Number.isInteger(cfg.version) || cfg.version < 1))
       errors.push('version은 1 이상의 정수여야 합니다.');
     const rules = cfg.hot_path_rules;
@@ -755,8 +756,8 @@ const GeoContract = (() => {
     const seenHpr = new Set();
     rules.forEach((r, i) => {
       if (!r || typeof r !== 'object') { errors.push(`hot_path_rules[${i}]가 객체가 아닙니다.`); return; }
-      if (typeof r.page_type !== 'string' || r.page_type.trim().length === 0)
-        errors.push(`hot_path_rules[${i}].page_type이 비어 있습니다.`);
+      if (!PAGE_TYPE_ENUM.includes(r.page_type))
+        errors.push(`hot_path_rules[${i}].page_type("${r.page_type}")은 허용된 값이 아닙니다. (${PAGE_TYPE_ENUM.join(', ')})`);
       else if (seenHpr.has(r.page_type))
         errors.push(`page_type "${r.page_type}"이 hot_path_rules에 중복 정의되었습니다.`);
       else seenHpr.add(r.page_type);
@@ -772,7 +773,7 @@ const GeoContract = (() => {
 
   return {
     API, KV, GLOBAL_ID, DEFAULT_ENV, DEFAULT_CHANNEL,
-    RULE_TYPES, RULE_STATUSES, ACTION_OPS, SCOPE_LEVELS, RULE_CATEGORIES, LIMITS,
+    RULE_TYPES, RULE_STATUSES, ACTION_OPS, PAGE_TYPE_ENUM, SCOPE_LEVELS, RULE_CATEGORIES, LIMITS,
     DOMAIN_ID_RE, HOST_PATTERN_RE, RULE_ID_RE, byteLength,
     validateHostPattern, validateRegistry, validateRule, validatePageTypeConfig,
   };
@@ -1325,8 +1326,9 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
 
   // ---------------- 탭B: 페이지 타입 ----------------
   function hprRow(data = {}) {
-    const ptSel = el('input', { type: 'text', list: 'pt-suggest', 'aria-label': 'page_type', title: '판정 결과 페이지 타입 (자유 입력)', placeholder: 'product', style: 'width:150px' });
-    ptSel.value = data.page_type || '';
+    const ptSel = el('select', { 'aria-label': 'page_type', title: 'Spin 허용값 중 선택', style: 'width:150px' },
+      ...C.PAGE_TYPE_ENUM.map((pt) => el('option', { value: pt }, pt)));
+    ptSel.value = data.page_type || 'product';
     const prio = el('input', { type: 'number', step: '1', 'aria-label': 'priority', title: '높을수록 먼저 평가', value: data.priority ?? 100, style: 'width:90px' });
     const urls = el('input', { type: 'text', 'aria-label': 'url_patterns (콤마 구분)', title: 'URL 경로 패턴 (콤마 구분, * 와일드카드)', placeholder: '*/products/*, */vp/*', value: (data.url_patterns || []).join(', ') });
     const qps = el('input', { type: 'text', 'aria-label': 'query_params (콤마 구분)', title: '판정에 참여하는 쿼리 파라미터 (콤마 구분)', placeholder: 'q', value: (data.query_params || []).join(', '), style: 'width:120px' });
@@ -1351,12 +1353,12 @@ if (typeof module === 'object' && module.exports) module.exports = GeoContract;
       const badge = $('#pt-found-badge');
       badge.textContent = d.found ? 'KV에 존재' : '신규 (KV에 없음)';
       badge.className = d.found ? 'badge on' : 'badge off';
-      $('#pt-fallback').value = d.config.fallback || '';
+      const fb = $('#pt-fallback');
+      fb.replaceChildren(...C.PAGE_TYPE_ENUM.map((pt) => el('option', { value: pt }, pt)));
+      fb.value = C.PAGE_TYPE_ENUM.includes(d.config.fallback) ? d.config.fallback : 'unknown';
       $('#pt-enabled').checked = d.config.enabled !== false;
       $('#pt-version').value = d.config.version || 1;
       $('#hpr-rows').replaceChildren(...(d.config.hot_path_rules || []).map((r) => hprRow(r)));
-      // 이 설정에 정의된 page_type도 자동완성 후보에 반영
-      refreshPageTypeSuggestions((d.config.hot_path_rules || []).map((r) => r.page_type));
       showErrors('#pt-errors', []);
     } catch (e) { handleApiError(e, '페이지 타입 설정을 불러오지 못했습니다'); }
   }

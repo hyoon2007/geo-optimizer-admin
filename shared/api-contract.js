@@ -63,8 +63,10 @@ const GeoContract = (() => {
     'inject_json_ld', 'prune_by_link_density',
   ];
 
-  // page_type은 고정 허용값(allowlist)을 두지 않는다 — 자유 입력. 비어있지 않은 문자열이면 되고,
-  // "중복 정의"만 검증에서 막는다. UI 자동완성 후보는 KV에 저장된 값에서 동적으로 채운다.
+  // 페이지타입 설정(page-type config)의 page_type/fallback은 Spin이 아래 enum을 강제한다
+  // (커스텀 값은 Spin에서 "page type config JSON must validate" 400으로 거부됨).
+  // 반면 룰의 scope.page_type은 Spin이 자유값을 허용하므로 enum을 강제하지 않는다.
+  const PAGE_TYPE_ENUM = ['product', 'category', 'search', 'landing', 'article', 'policy', 'unknown'];
 
   const SCOPE_LEVELS = ['global', 'customer', 'page_type', 'customer_page_type'];
 
@@ -254,9 +256,8 @@ const GeoContract = (() => {
     if (!cfg || typeof cfg !== 'object') return ['페이지타입 설정이 객체가 아닙니다.'];
     if (cfg.enabled !== undefined && typeof cfg.enabled !== 'boolean')
       errors.push('enabled는 boolean이어야 합니다.');
-    if (cfg.fallback !== undefined && cfg.fallback !== null &&
-        (typeof cfg.fallback !== 'string' || cfg.fallback.trim().length === 0))
-      errors.push('fallback은 비어있지 않은 문자열이어야 합니다.');
+    if (cfg.fallback !== undefined && cfg.fallback !== null && !PAGE_TYPE_ENUM.includes(cfg.fallback))
+      errors.push(`fallback("${cfg.fallback}")은 허용된 page_type이 아닙니다. (${PAGE_TYPE_ENUM.join(', ')})`);
     if (cfg.version !== undefined && (!Number.isInteger(cfg.version) || cfg.version < 1))
       errors.push('version은 1 이상의 정수여야 합니다.');
     const rules = cfg.hot_path_rules;
@@ -264,8 +265,8 @@ const GeoContract = (() => {
     const seenHpr = new Set();
     rules.forEach((r, i) => {
       if (!r || typeof r !== 'object') { errors.push(`hot_path_rules[${i}]가 객체가 아닙니다.`); return; }
-      if (typeof r.page_type !== 'string' || r.page_type.trim().length === 0)
-        errors.push(`hot_path_rules[${i}].page_type이 비어 있습니다.`);
+      if (!PAGE_TYPE_ENUM.includes(r.page_type))
+        errors.push(`hot_path_rules[${i}].page_type("${r.page_type}")은 허용된 값이 아닙니다. (${PAGE_TYPE_ENUM.join(', ')})`);
       else if (seenHpr.has(r.page_type))
         errors.push(`page_type "${r.page_type}"이 hot_path_rules에 중복 정의되었습니다.`);
       else seenHpr.add(r.page_type);
@@ -281,7 +282,7 @@ const GeoContract = (() => {
 
   return {
     API, KV, GLOBAL_ID, DEFAULT_ENV, DEFAULT_CHANNEL,
-    RULE_TYPES, RULE_STATUSES, ACTION_OPS, SCOPE_LEVELS, RULE_CATEGORIES, LIMITS,
+    RULE_TYPES, RULE_STATUSES, ACTION_OPS, PAGE_TYPE_ENUM, SCOPE_LEVELS, RULE_CATEGORIES, LIMITS,
     DOMAIN_ID_RE, HOST_PATTERN_RE, RULE_ID_RE, byteLength,
     validateHostPattern, validateRegistry, validateRule, validatePageTypeConfig,
   };
