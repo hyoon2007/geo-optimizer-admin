@@ -1,6 +1,7 @@
 'use strict';
 const express = require('express');
 const C = require('../../../shared/api-contract');
+const { validateRuleSchema, normalizeRule } = require('../validation/ruleSchema');
 
 function createRulesRouter({ spin, config }) {
   const router = express.Router();
@@ -92,14 +93,15 @@ function createRulesRouter({ spin, config }) {
   // (스펙 확장: 새 룰이 목록 fan-out에 바로 잡히도록).
   router.post('/:rule_id', async (req, res, next) => {
     try {
-      const rule = req.body || {};
+      // 폼이 보내는 null 옵셔널 필드 정리 후 JSON Schema(ajv)로 저장 전 검증.
+      const rule = normalizeRule(req.body || {});
       const version = parseInt(req.query.version, 10) || rule.version || 1;
-      const errors = C.validateRule(rule);
+      rule.version = version;
+      const errors = validateRuleSchema(rule);
       if (rule.rule_id !== req.params.rule_id)
         errors.push(`body.rule_id("${rule.rule_id}")가 경로의 rule_id("${req.params.rule_id}")와 다릅니다.`);
       if (errors.length) return res.status(400).json({ ok: false, errors });
 
-      rule.version = version;
       const result = await spin.kvSet(C.KV.rule(rule.rule_id, version), rule);
 
       let attached = null;

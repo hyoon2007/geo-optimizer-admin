@@ -59,6 +59,7 @@ app.use('/api', api);
 // ---- 정적 UI 서빙 (동일 오리진 → CORS 불필요) ----
 app.use(express.static(config.webDir, { index: 'index.html' }));
 app.use('/shared', express.static(path.join(__dirname, '..', '..', 'shared')));
+app.use('/schemas', express.static(path.join(__dirname, '..', '..', 'schemas')));
 
 app.use('/api', (req, res) => res.status(404).json({ ok: false, error: '알 수 없는 API 경로입니다.' }));
 

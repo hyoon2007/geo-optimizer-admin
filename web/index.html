@@ -561,6 +561,15 @@ const GeoContract = (() => {
 
   const SCOPE_LEVELS = ['global', 'customer', 'page_type', 'customer_page_type'];
 
+  // ---- rule.schema.json(v1.1.1) 동기화 열거값 (Phase 2 UI에서 사용) ----
+  // 저장 전 권위 검증은 BFF의 ajv(schemas/rule.schema.json)가 담당한다. 아래는 폼 드롭다운/라벨용.
+  const EXECUTION_CLASSES = ['streaming', 'bounded-buffer', 'stateful', 'cold-only'];
+  const ACTION_PHASES = ['prepare', 'structural', 'normalize', 'asset', 'finalizer'];
+  const OVERRIDE_STRATEGIES = ['append', 'replace', 'disable_parent', 'protect'];
+  // 신규 생성/변경 시 선택 가능한 action op (schema x-adminSelectable=true).
+  // 나머지 op는 기존 룰 조회는 되지만 신규 생성 선택은 막아야 한다(Phase 2).
+  const ADMIN_SELECTABLE_OPS = ['remove_element', 'flatten_element', 'relocate_element', 'remove_attribute'];
+
   // ---- 최적화 룰 카테고리 (RuleType → UI 그룹핑) ----
   const RULE_CATEGORIES = [
     { id: 'structure', label: '구조 제거',
@@ -774,6 +783,7 @@ const GeoContract = (() => {
   return {
     API, KV, GLOBAL_ID, DEFAULT_ENV, DEFAULT_CHANNEL,
     RULE_TYPES, RULE_STATUSES, ACTION_OPS, PAGE_TYPE_ENUM, SCOPE_LEVELS, RULE_CATEGORIES, LIMITS,
+    EXECUTION_CLASSES, ACTION_PHASES, OVERRIDE_STRATEGIES, ADMIN_SELECTABLE_OPS,
     DOMAIN_ID_RE, HOST_PATTERN_RE, RULE_ID_RE, byteLength,
     validateHostPattern, validateRegistry, validateRule, validatePageTypeConfig,
   };
