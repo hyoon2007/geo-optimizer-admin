@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:geo-optimizer:rule-authoring-schema:1.1.1",
+  "$id": "urn:geo-optimizer:rule-authoring-schema:1.2.0",
   "title": "Geo Optimizer Rule",
   "description": "Authoring schema for Rule Admin UI. Runtime validation remains authoritative for UTF-8 byte budgets and hot-path safety.",
-  "x-schemaArtifactVersion": "1.1.1",
-  "x-ruleWireSchemaVersions": ["1.0", "1.1"],
+  "x-schemaArtifactVersion": "1.2.0",
+  "x-ruleWireSchemaVersions": ["1.0", "1.1", "1.2"],
   "type": "object",
   "required": [
     "schema_version",
@@ -21,8 +21,8 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "enum": ["1.0", "1.1"],
-      "description": "Use 1.1 for rules containing relocate_element. Version 1.0 remains accepted for existing rules."
+      "enum": ["1.0", "1.1", "1.2"],
+      "description": "Use 1.1 or later for relocate_element and 1.2 for flatten separators. Older versions remain accepted for existing rules."
     },
     "rule_id": {
       "type": "string",
@@ -94,7 +94,24 @@
         },
         "required": ["actions"]
       },
-      "then": {"properties": {"schema_version": {"const": "1.1"}}}
+      "then": {"properties": {"schema_version": {"enum": ["1.1", "1.2"]}}}
+    },
+    {
+      "if": {
+        "properties": {
+          "actions": {
+            "contains": {
+              "type": "object",
+              "anyOf": [
+                {"required": ["separator_before"]},
+                {"required": ["separator_after"]}
+              ]
+            }
+          }
+        },
+        "required": ["actions"]
+      },
+      "then": {"properties": {"schema_version": {"const": "1.2"}}}
     },
     {
       "if": {"properties": {"type": {"const": "link_density_prune"}}},
@@ -231,6 +248,8 @@
         "min_link_density": {"type": "number", "minimum": 0, "maximum": 1},
         "max_plain_text_chars": {"type": "integer", "minimum": 0},
         "max_buffer_bytes": {"type": "integer", "minimum": 1, "maximum": 65536},
+        "separator_before": {"type": "string", "enum": ["", " ", "\n"]},
+        "separator_after": {"type": "string", "enum": ["", " ", "\n"]},
         "template": {"not": {"type": "null"}},
         "provides": {"type": "array", "items": {"type": "string"}},
         "requires_after": {"type": "array", "items": {"type": "string"}},
@@ -272,6 +291,17 @@
               "phase": {"const": "normalize"},
               "selectors": {"maxItems": 0}
             }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {"required": ["separator_before"]},
+              {"required": ["separator_after"]}
+            ]
+          },
+          "then": {
+            "properties": {"op": {"const": "flatten_element"}}
           }
         },
         {

@@ -7,9 +7,9 @@ Rule 생성·수정 시 다음 JSON Schema를 기준으로 입력값을 검증�
 Schema 파일: [rule.schema.json](./rule.schema.json)
 
 ```text
-Schema ID: urn:geo-optimizer:rule-authoring-schema:1.1.1
-Artifact version: 1.1.1
-지원 Rule schema versions: 1.0, 1.1
+Schema ID: urn:geo-optimizer:rule-authoring-schema:1.2.0
+Artifact version: 1.2.0
+지원 Rule schema versions: 1.0, 1.1, 1.2
 ```
 
 ## 신규 action: `relocate_element`
@@ -51,6 +51,25 @@ remove_attribute
 ```
 
 `x-adminSelectable: false`인 action은 기존 Rule 조회에는 표시할 수 있지만, 신규 생성이나 변경 시 선택할 수 없도록 처리해야 합니다.
+
+## `flatten_element` 구분자 옵션
+
+wrapper 제거 후 인접 텍스트가 붙는 경우 `separator_before` 또는 `separator_after`를 사용할 수 있습니다.
+
+```json
+{
+  "op": "flatten_element",
+  "execution_class": "streaming",
+  "selector": "#subHeader h1 > p",
+  "separator_after": " "
+}
+```
+
+- 구분자를 사용하는 Rule의 `schema_version`은 `"1.2"`여야 합니다.
+- 구분자는 `flatten_element`에서만 사용할 수 있습니다.
+- 허용값은 빈 문자열, ASCII 공백 한 칸, 줄바꿈 한 글자입니다.
+- 구분자는 HTML이 아닌 text로 삽입됩니다.
+- 옵션을 생략한 기존 flatten 동작은 변경되지 않습니다.
 
 ## 추가 검증
 
